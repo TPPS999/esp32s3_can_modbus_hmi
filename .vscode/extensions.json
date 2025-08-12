@@ -1,0 +1,9 @@
+{
+    "recommendations": [
+        "platformio.platformio-ide",
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        "webfreak.debug",
+        "ms-python.python"
+    ]
+}
