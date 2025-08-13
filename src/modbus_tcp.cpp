@@ -491,6 +491,12 @@ static void printModbusRequest(uint8_t* request, int length) {
   }
 }
 
+// === ADDITIONAL UTILITY FUNCTIONS ===
+
+const ModbusStats& getModbusStatistics() {
+  return modbusStats;
+}
+
 static void printModbusResponse(uint8_t* response, int length) {
   DEBUG_PRINTF("📤 Modbus Response sent: %d bytes\n", length);
 }

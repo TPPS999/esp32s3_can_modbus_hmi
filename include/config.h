@@ -170,4 +170,194 @@ typedef enum {
   BMS_FRAME_TYPE_COUNT
 } BMSFrameType_t;
 
-// === CONFIGURATION
+// === CONFIGURATION STRUCTURES ===
+
+struct SystemConfig {
+  // WiFi Configuration
+  char wifiSSID[MAX_WIFI_SSID_LENGTH];
+  char wifiPassword[MAX_WIFI_PASSWORD_LENGTH];
+  char deviceIP[MAX_IP_ADDRESS_LENGTH];
+  
+  // BMS Configuration
+  uint8_t activeBmsNodes;
+  uint8_t bmsNodeIds[MAX_BMS_NODES];
+  
+  // CAN Configuration
+  uint8_t canSpeed;
+  
+  // System Configuration
+  bool configValid;
+  char deviceName[MAX_DEVICE_NAME_LENGTH];
+  
+  // Feature Flags
+  bool enableAutoReconnect;
+  bool enableAPFallback;
+  bool enableOTA;
+  bool enableWebServer;
+  bool enableSNMP;
+  
+  // Timeouts and Intervals
+  unsigned long heartbeatInterval;
+  unsigned long diagnosticsInterval;
+  unsigned long communicationTimeout;
+  unsigned long reconnectInterval;
+};
+
+// === GLOBAL VARIABLES ===
+extern SystemConfig systemConfig;
+extern SystemState_t systemState;
+
+// === FUNCTION DECLARATIONS ===
+
+// Configuration Management
+bool loadConfiguration();
+bool saveConfiguration();
+void initializeDefaultConfiguration();
+bool validateConfiguration();
+void printConfiguration();
+void resetConfigurationToDefaults();
+
+// System State Management
+void setSystemState(SystemState_t newState);
+SystemState_t getSystemState();
+String systemStateToString(SystemState_t state);
+
+// Utility Functions
+bool isValidIPAddress(const String& ip);
+bool isValidSSID(const String& ssid);
+bool isValidBMSNodeId(uint8_t nodeId);
+void updateSystemUptime();
+unsigned long getSystemUptime();
+
+// Debug and Diagnostics
+void printSystemInfo();
+void printMemoryStatus();
+void printBootProgress(const String& step, bool success);
+String formatBytes(size_t bytes);
+String formatUptime(unsigned long milliseconds);
+
+// Emergency Functions
+void systemRestart(unsigned long delayMs = 0);
+void systemShutdown();
+void enterSafeMode();
+
+// === CONFIGURATION DEFAULTS ===
+#define DEFAULT_HEARTBEAT_INTERVAL_MS 60000
+#define DEFAULT_DIAGNOSTICS_INTERVAL_MS 300000
+#define DEFAULT_COMMUNICATION_TIMEOUT_MS 30000
+#define DEFAULT_RECONNECT_INTERVAL_MS 5000
+
+// === VALIDATION MACROS ===
+#define IS_VALID_BMS_COUNT(x) ((x) > 0 && (x) <= MAX_BMS_NODES)
+#define IS_VALID_NODE_ID(x) ((x) > 0 && (x) <= 255)
+#define IS_VALID_CAN_SPEED(x) ((x) == CAN_125KBPS || (x) == CAN_250KBPS || (x) == CAN_500KBPS)
+
+// === FEATURE FLAGS ===
+#define FEATURE_WIFI_MANAGER 1
+#define FEATURE_CAN_HANDLER 1
+#define FEATURE_MODBUS_TCP 1
+#define FEATURE_BMS_DATA 1
+#define FEATURE_WEB_SERVER 0
+#define FEATURE_OTA_UPDATES 0
+#define FEATURE_SNMP_AGENT 0
+#define FEATURE_DATA_LOGGING 0
+
+// === PERFORMANCE SETTINGS ===
+#define MAIN_LOOP_DELAY_MS 1
+#define STATUS_CHECK_INTERVAL_MS 10000
+#define MEMORY_CHECK_INTERVAL_MS 60000
+#define WATCHDOG_TIMEOUT_MS 30000
+
+// === SECURITY SETTINGS ===
+#define ENABLE_WPA3_SUPPORT 1
+#define ENABLE_HTTPS_SUPPORT 0
+#define ENABLE_AUTH_REQUIRED 0
+#define DEFAULT_API_KEY ""
+
+// === ADVANCED CAN SETTINGS ===
+#define CAN_RX_BUFFER_SIZE 32
+#define CAN_TX_BUFFER_SIZE 16
+#define CAN_FILTER_COUNT 8
+#define CAN_ERROR_THRESHOLD 100
+#define CAN_RECOVERY_ATTEMPTS 3
+
+// === ADVANCED MODBUS SETTINGS ===
+#define MODBUS_MAX_CONCURRENT_CLIENTS 4
+#define MODBUS_REQUEST_TIMEOUT_MS 5000
+#define MODBUS_RESPONSE_BUFFER_SIZE 256
+#define MODBUS_EXCEPTION_RETRY_COUNT 3
+
+// === MEMORY MANAGEMENT ===
+#define MIN_FREE_HEAP_BYTES 50000
+#define HEAP_WARNING_THRESHOLD 75000
+#define STACK_GUARD_SIZE 4096
+
+// === LOGGING CONFIGURATION ===
+typedef enum {
+  LOG_LEVEL_NONE = 0,
+  LOG_LEVEL_ERROR,
+  LOG_LEVEL_WARNING,
+  LOG_LEVEL_INFO,
+  LOG_LEVEL_DEBUG,
+  LOG_LEVEL_VERBOSE
+} LogLevel_t;
+
+#define DEFAULT_LOG_LEVEL LOG_LEVEL_INFO
+#define MAX_LOG_MESSAGE_LENGTH 256
+
+// === CONDITIONAL COMPILATION ===
+#ifdef ESP32S3
+  #define PLATFORM_ESP32S3 1
+  #define CPU_FREQUENCY_MHZ 240
+  #define FLASH_SIZE_MB 8
+  #define PSRAM_SIZE_MB 8
+#else
+  #error "This code is designed for ESP32S3 only"
+#endif
+
+// === VERSION COMPATIBILITY ===
+#define MIN_ARDUINO_ESP32_VERSION "2.0.0"
+#define REQUIRED_RADIOLIB_VERSION "6.0.0"
+#define REQUIRED_WIFI_LIB_VERSION "2.0.0"
+
+// === COMPILE-TIME CHECKS ===
+#if MAX_BMS_NODES > 16
+  #error "MAX_BMS_NODES cannot exceed 16"
+#endif
+
+#if MODBUS_MAX_HOLDING_REGISTERS != (MAX_BMS_NODES * MODBUS_REGISTERS_PER_BMS)
+  #error "Modbus register count mismatch"
+#endif
+
+#if EEPROM_SIZE < 512
+  #error "EEPROM size too small for configuration"
+#endif
+
+// === INLINE UTILITY FUNCTIONS ===
+inline bool isSystemRunning() {
+  return systemState == SYSTEM_STATE_RUNNING;
+}
+
+inline bool isSystemError() {
+  return systemState == SYSTEM_STATE_ERROR;
+}
+
+inline unsigned long millisSinceBoot() {
+  return millis();
+}
+
+inline void systemDelay(unsigned long ms) {
+  if (ms > 0) delay(ms);
+}
+
+// === CALLBACK TYPES ===
+typedef void (*SystemStateCallback)(SystemState_t oldState, SystemState_t newState);
+typedef void (*ErrorCallback)(const char* errorMessage);
+typedef void (*HeartbeatCallback)();
+
+// === CALLBACK REGISTRATION ===
+void setSystemStateCallback(SystemStateCallback callback);
+void setErrorCallback(ErrorCallback callback);
+void setHeartbeatCallback(HeartbeatCallback callback);
+
+#endif // CONFIG_H
