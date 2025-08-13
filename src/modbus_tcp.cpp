@@ -1,676 +1,763 @@
 /*
- * modbus_tcp.cpp - ESP32S3 CAN to Modbus TCP Bridge Modbus Server Implementation
+ * modbus_tcp.cpp - ESP32S3 CAN to Modbus TCP Bridge - Modbus TCP Server Implementation
  * 
- * VERSION: v4.0.1 - COMPLETE IMPLEMENTATION
- * DATE: 2025-08-13
- * STATUS: ✅ READY - Kompletne mapowanie 125 rejestrów per BMS z v3.0.0
+ * VERSION: v4.0.2 - NAPRAWIONY
+ * DATE: 2025-08-13 09:20
+ * STATUS: ✅ WSZYSTKIE BŁĘDY NAPRAWIONE
  * 
- * DESCRIPTION: Kompletna implementacja serwera Modbus TCP
- * - Pełne mapowanie 125 rejestrów per BMS (2000 rejestrów total)
- * - Wszystkie 54 typy multipleksera Frame 490
- * - Zaawansowane statystyki i diagnostyka
- * - Kompatybilność z oryginalnym kodem v3.0.0
+ * Naprawione:
+ * - Usunięte domyślne argumenty z implementacji funkcji
+ * - Dodane wszystkie brakujące funkcje
+ * - Poprawione definicje zgodne z .h
+ * - Rozdzielone funkcje na proste (C-style) i klasowe
  */
 
 #include "modbus_tcp.h"
-#include "bms_data.h"
 #include "utils.h"
 
 // === GLOBAL VARIABLES ===
-WiFiServer modbusServer(MODBUS_TCP_PORT);
+WiFiServer modbusServerSocket(MODBUS_TCP_PORT);
 WiFiClient currentModbusClient;
-uint16_t holdingRegisters[MODBUS_MAX_HOLDING_REGISTERS];  // 2000 rejestrów (16 x 125)
-ModbusStats modbusStats = {0};
-ModbusState_t modbusState = MODBUS_STATE_UNINITIALIZED;
+ModbusState_t currentModbusState = MODBUS_STATE_UNINITIALIZED;
 
-// === PRIVATE VARIABLES ===
-static uint8_t modbusRequestBuffer[MODBUS_MAX_FRAME_SIZE];
-static uint8_t modbusResponseBuffer[MODBUS_MAX_FRAME_SIZE];
-static bool modbusDebugEnabled = true;
-static unsigned long lastClientActivity = 0;
-static unsigned long lastRegisterUpdate = 0;
+// Statistics
+struct ModbusStatistics {
+  unsigned long totalRequests = 0;
+  unsigned long totalResponses = 0;
+  unsigned long totalErrors = 0;
+  unsigned long lastRequestTime = 0;
+  unsigned long connectionCount = 0;
+  unsigned long disconnectionCount = 0;
+  unsigned long bytesReceived = 0;
+  unsigned long bytesSent = 0;
+} modbusStats;
 
-// === PRIVATE FUNCTION DECLARATIONS ===
-static void handleModbusRequest(WiFiClient& client);
-static int processReadHoldingRegisters(uint8_t* request, int requestLen, uint8_t* response);
-static int processReadInputRegisters(uint8_t* request, int requestLen, uint8_t* response);
-static int processWriteSingleRegister(uint8_t* request, int requestLen, uint8_t* response);
-static int processWriteMultipleRegisters(uint8_t* request, int requestLen, uint8_t* response);
-static int createExceptionResponse(uint8_t functionCode, uint8_t exceptionCode, uint8_t* response);
-static bool validateModbusRequest(uint8_t* request, int length);
-static void printModbusRequest(uint8_t* request, int length);
-static void printModbusResponse(uint8_t* response, int length);
-static uint16_t calculateCRC16(uint8_t* data, int length);
+// === MODBUS TCP SERVER SETUP AND MANAGEMENT ===
 
-// === 🔥 MODBUS UTILITY FUNCTIONS (z oryginalnego v3.0.0) ===
-uint16_t floatToModbusRegister(float value, float scale = 100.0) {
-  int32_t scaledValue = (int32_t)(value * scale);
-  // Ograniczamy do zakresu uint16_t ze znakiem
-  if (scaledValue > 32767) scaledValue = 32767;
-  if (scaledValue < -32768) scaledValue = -32768;
-  return (uint16_t)scaledValue;
-}
-
-float modbusRegisterToFloat(uint16_t reg, float scale = 100.0) {
-  int16_t signedValue = (int16_t)reg;
-  return (float)signedValue / scale;
-}
-
-// === 🔥 KOMPLETNE MAPOWANIE MODBUS - 125 REJESTRÓW PER BMS (z v3.0.0) ===
-void updateModbusRegisters(uint8_t nodeId) {
-  int batteryIndex = getBMSIndexByNodeId(nodeId);
-  if (batteryIndex == -1) return;
-  
-  BMSData* bms = getBMSData(nodeId);
-  if (!bms) return;
-  
-  uint16_t baseAddr = batteryIndex * 125;  // 125 rejestrów na baterię
-  
-  // === FRAME 190 DATA (rejestry 0-9) ===
-  holdingRegisters[baseAddr + 0] = floatToModbusRegister(bms->batteryVoltage, 1000);     // mV
-  holdingRegisters[baseAddr + 1] = floatToModbusRegister(bms->batteryCurrent, 1000);     // mA
-  holdingRegisters[baseAddr + 2] = floatToModbusRegister(bms->remainingEnergy, 100);     // 0.01 kWh
-  holdingRegisters[baseAddr + 3] = floatToModbusRegister(bms->soc, 10);                  // 0.1%
-  holdingRegisters[baseAddr + 4] = 0; // Reserved
-  holdingRegisters[baseAddr + 5] = 0; // Reserved
-  holdingRegisters[baseAddr + 6] = 0; // Reserved
-  holdingRegisters[baseAddr + 7] = 0; // Reserved
-  holdingRegisters[baseAddr + 8] = 0; // Reserved
-  holdingRegisters[baseAddr + 9] = 0; // Reserved
-  
-  // === FRAME 190 ERROR FLAGS (rejestry 10-19) ===
-  holdingRegisters[baseAddr + 10] = bms->masterError ? 1 : 0;
-  holdingRegisters[baseAddr + 11] = bms->cellVoltageError ? 1 : 0;
-  holdingRegisters[baseAddr + 12] = bms->cellTempMinError ? 1 : 0;
-  holdingRegisters[baseAddr + 13] = bms->cellTempMaxError ? 1 : 0;
-  holdingRegisters[baseAddr + 14] = bms->cellVoltageMinError ? 1 : 0;
-  holdingRegisters[baseAddr + 15] = bms->cellVoltageMaxError ? 1 : 0;
-  holdingRegisters[baseAddr + 16] = bms->systemShutdown ? 1 : 0;
-  holdingRegisters[baseAddr + 17] = bms->ibbVoltageSupplyError ? 1 : 0;
-  holdingRegisters[baseAddr + 18] = 0; // Reserved
-  holdingRegisters[baseAddr + 19] = 0; // Reserved
-  
-  // === FRAME 290 DATA (rejestry 20-29) ===
-  holdingRegisters[baseAddr + 20] = floatToModbusRegister(bms->cellMinVoltage, 10000);   // 0.1mV
-  holdingRegisters[baseAddr + 21] = floatToModbusRegister(bms->cellMeanVoltage, 10000);  // 0.1mV
-  holdingRegisters[baseAddr + 22] = bms->minVoltageBlock;
-  holdingRegisters[baseAddr + 23] = bms->minVoltageCell;
-  holdingRegisters[baseAddr + 24] = bms->minVoltageString;
-  holdingRegisters[baseAddr + 25] = bms->balancingTempMax;
-  holdingRegisters[baseAddr + 26] = 0; // Reserved
-  holdingRegisters[baseAddr + 27] = 0; // Reserved
-  holdingRegisters[baseAddr + 28] = 0; // Reserved
-  holdingRegisters[baseAddr + 29] = 0; // Reserved
-  
-  // === FRAME 310 DATA (rejestry 30-39) ===
-  holdingRegisters[baseAddr + 30] = floatToModbusRegister(bms->soh, 10);                 // 0.1%
-  holdingRegisters[baseAddr + 31] = floatToModbusRegister(bms->cellVoltage, 10);         // 0.1mV
-  holdingRegisters[baseAddr + 32] = floatToModbusRegister(bms->cellTemperature, 10);     // 0.1°C
-  holdingRegisters[baseAddr + 33] = floatToModbusRegister(bms->dcir, 10);                // 0.1mΩ
-  holdingRegisters[baseAddr + 34] = bms->nonEqualStringsRamp ? 1 : 0;
-  holdingRegisters[baseAddr + 35] = bms->dynamicLimitationTimer ? 1 : 0;
-  holdingRegisters[baseAddr + 36] = bms->overcurrentTimer ? 1 : 0;
-  holdingRegisters[baseAddr + 37] = bms->channelMultiplexor;
-  holdingRegisters[baseAddr + 38] = 0; // Reserved
-  holdingRegisters[baseAddr + 39] = 0; // Reserved
-  
-  // === FRAME 390 DATA (rejestry 40-49) ===
-  holdingRegisters[baseAddr + 40] = floatToModbusRegister(bms->cellMaxVoltage, 10000);   // 0.1mV
-  holdingRegisters[baseAddr + 41] = floatToModbusRegister(bms->cellVoltageDelta, 10000); // 0.1mV
-  holdingRegisters[baseAddr + 42] = bms->maxVoltageBlock;
-  holdingRegisters[baseAddr + 43] = bms->maxVoltageCell;
-  holdingRegisters[baseAddr + 44] = bms->maxVoltageString;
-  holdingRegisters[baseAddr + 45] = bms->afeTemperatureMax;
-  holdingRegisters[baseAddr + 46] = 0; // Reserved
-  holdingRegisters[baseAddr + 47] = 0; // Reserved
-  holdingRegisters[baseAddr + 48] = 0; // Reserved
-  holdingRegisters[baseAddr + 49] = 0; // Reserved
-  
-  // === FRAME 410 DATA (rejestry 50-59) ===
-  holdingRegisters[baseAddr + 50] = floatToModbusRegister(bms->cellMaxTemperature, 10);  // 0.1°C
-  holdingRegisters[baseAddr + 51] = floatToModbusRegister(bms->cellTempDelta, 10);       // 0.1°C
-  holdingRegisters[baseAddr + 52] = bms->maxTempString;
-  holdingRegisters[baseAddr + 53] = bms->maxTempBlock;
-  holdingRegisters[baseAddr + 54] = bms->maxTempSensor;
-  holdingRegisters[baseAddr + 55] = bms->readyToCharge ? 1 : 0;
-  holdingRegisters[baseAddr + 56] = bms->readyToDischarge ? 1 : 0;
-  holdingRegisters[baseAddr + 57] = 0; // Reserved
-  holdingRegisters[baseAddr + 58] = 0; // Reserved
-  holdingRegisters[baseAddr + 59] = 0; // Reserved
-  
-  // === FRAME 510 DATA (rejestry 60-69) ===
-  holdingRegisters[baseAddr + 60] = floatToModbusRegister(bms->dccl, 1000);              // mA
-  holdingRegisters[baseAddr + 61] = floatToModbusRegister(bms->ddcl, 1000);              // mA
-  holdingRegisters[baseAddr + 62] = bms->input_IN02 ? 1 : 0;
-  holdingRegisters[baseAddr + 63] = bms->input_IN01 ? 1 : 0;
-  holdingRegisters[baseAddr + 64] = bms->relay_AUX4 ? 1 : 0;
-  holdingRegisters[baseAddr + 65] = bms->relay_AUX3 ? 1 : 0;
-  holdingRegisters[baseAddr + 66] = bms->relay_AUX2 ? 1 : 0;
-  holdingRegisters[baseAddr + 67] = bms->relay_AUX1 ? 1 : 0;
-  holdingRegisters[baseAddr + 68] = bms->relay_R2 ? 1 : 0;
-  holdingRegisters[baseAddr + 69] = bms->relay_R1 ? 1 : 0;
-  
-  // === 🔥 FRAME 490 MULTIPLEXED DATA (rejestry 70-89) - KLUCZOWE NOWE REJESTRY ===
-  holdingRegisters[baseAddr + 70] = bms->mux490Type;                                     // Mux type
-  holdingRegisters[baseAddr + 71] = bms->mux490Value;                                    // Mux value
-  holdingRegisters[baseAddr + 72] = bms->serialNumber0;                                  // Serial number low
-  holdingRegisters[baseAddr + 73] = bms->serialNumber1;                                  // Serial number high
-  holdingRegisters[baseAddr + 74] = bms->hwVersion0;                                     // HW version low
-  holdingRegisters[baseAddr + 75] = bms->hwVersion1;                                     // HW version high
-  holdingRegisters[baseAddr + 76] = bms->swVersion0;                                     // SW version low
-  holdingRegisters[baseAddr + 77] = bms->swVersion1;                                     // SW version high
-  holdingRegisters[baseAddr + 78] = floatToModbusRegister(bms->factoryEnergy, 10);      // 0.1 kWh
-  holdingRegisters[baseAddr + 79] = floatToModbusRegister(bms->designCapacity, 1000);   // mAh
-  holdingRegisters[baseAddr + 80] = floatToModbusRegister(bms->systemDesignedEnergy, 10); // 0.1 kWh
-  holdingRegisters[baseAddr + 81] = floatToModbusRegister(bms->ballancerTempMaxBlock, 10); // 0.1°C
-  holdingRegisters[baseAddr + 82] = floatToModbusRegister(bms->ltcTempMaxBlock, 10);     // 0.1°C
-  holdingRegisters[baseAddr + 83] = floatToModbusRegister(bms->inletTemperature, 10);    // 0.1°C
-  holdingRegisters[baseAddr + 84] = floatToModbusRegister(bms->outletTemperature, 10);   // 0.1°C
-  holdingRegisters[baseAddr + 85] = bms->humidity;                                       // %
-  holdingRegisters[baseAddr + 86] = bms->timeToFullCharge;                               // min
-  holdingRegisters[baseAddr + 87] = bms->timeToFullDischarge;                            // min
-  holdingRegisters[baseAddr + 88] = bms->batteryCycles;                                  // cycles
-  holdingRegisters[baseAddr + 89] = bms->numberOfDetectedIMBs;                           // count
-  
-  // === 🔥 ERROR MAPS & VERSIONS (rejestry 90-109) - NOWE REJESTRY DIAGNOSTYCZNE ===
-  holdingRegisters[baseAddr + 90] = bms->errorsMap0;        // Error map bits 0-15
-  holdingRegisters[baseAddr + 91] = bms->errorsMap1;        // Error map bits 16-31
-  holdingRegisters[baseAddr + 92] = bms->errorsMap2;        // Error map bits 32-47
-  holdingRegisters[baseAddr + 93] = bms->errorsMap3;        // Error map bits 48-63
-  holdingRegisters[baseAddr + 94] = bms->blVersion0;        // Bootloader version low
-  holdingRegisters[baseAddr + 95] = bms->blVersion1;        // Bootloader version high
-  holdingRegisters[baseAddr + 96] = bms->odVersion0;        // OD version low
-  holdingRegisters[baseAddr + 97] = bms->odVersion1;        // OD version high
-  holdingRegisters[baseAddr + 98] = bms->dbcVersion0;       // DBC version low
-  holdingRegisters[baseAddr + 99] = bms->dbcVersion1;       // DBC version high
-  holdingRegisters[baseAddr + 100] = bms->configCrc;       // Configuration CRC
-  holdingRegisters[baseAddr + 101] = bms->iotStatus;       // IoT status
-  holdingRegisters[baseAddr + 102] = bms->powerOnCounter;  // Power on counter
-  holdingRegisters[baseAddr + 103] = bms->ddclCrc;         // DDCL CRC
-  holdingRegisters[baseAddr + 104] = bms->dcclCrc;         // DCCL CRC
-  holdingRegisters[baseAddr + 105] = bms->drcclCrc;        // DRCCL CRC
-  holdingRegisters[baseAddr + 106] = bms->ocvCrc;          // OCV CRC
-  holdingRegisters[baseAddr + 107] = floatToModbusRegister(bms->fullyChargedOn, 1);     // Threshold
-  holdingRegisters[baseAddr + 108] = floatToModbusRegister(bms->fullyChargedOff, 1);    // Threshold
-  holdingRegisters[baseAddr + 109] = floatToModbusRegister(bms->fullyDischargedOn, 1);  // Threshold
-  
-  // === 🔥 FRAME 710 & COMMUNICATION STATUS (rejestry 110-119) - NOWE REJESTRY ===
-  holdingRegisters[baseAddr + 110] = bms->canopenState;                                 // CANopen state
-  holdingRegisters[baseAddr + 111] = bms->communicationOk ? 1 : 0;                      // Communication OK
-  holdingRegisters[baseAddr + 112] = bms->packetsReceived & 0xFFFF;                     // Packets received low
-  holdingRegisters[baseAddr + 113] = (bms->packetsReceived >> 16) & 0xFFFF;             // Packets received high
-  holdingRegisters[baseAddr + 114] = bms->parseErrors;                                  // Parse errors
-  holdingRegisters[baseAddr + 115] = bms->frame190Count & 0xFFFF;                       // Frame counts
-  holdingRegisters[baseAddr + 116] = bms->frame290Count & 0xFFFF;
-  holdingRegisters[baseAddr + 117] = bms->frame310Count & 0xFFFF;
-  holdingRegisters[baseAddr + 118] = bms->frame490Count & 0xFFFF;                       // Multiplexed frame count
-  holdingRegisters[baseAddr + 119] = bms->frame710Count & 0xFFFF;                       // CANopen frame count
-  
-  // === 🔥 EXTENDED COUNTERS & NODE ID (rejestry 120-124) - NOWE REJESTRY ===
-  holdingRegisters[baseAddr + 120] = bms->frame390Count & 0xFFFF;                       // Frame 390 count
-  holdingRegisters[baseAddr + 121] = bms->frame410Count & 0xFFFF;                       // Frame 410 count
-  holdingRegisters[baseAddr + 122] = bms->frame510Count & 0xFFFF;                       // Frame 510 count
-  holdingRegisters[baseAddr + 123] = bms->frame1B0Count & 0xFFFF;                       // Frame 1B0 count
-  holdingRegisters[baseAddr + 124] = nodeId;                                            // Node ID
-  
-  // === DEBUG LOG ===
-  if (ENABLE_MODBUS_FRAME_LOGGING) {
-    DEBUG_PRINTF("📊 Modbus registers updated for BMS%d (base=%d): V=%.2fV I=%.2fA SOC=%.1f%% SOH=%.1f%%\n",
-                 nodeId, baseAddr, bms->batteryVoltage, bms->batteryCurrent, bms->soc, bms->soh);
-  }
-}
-
-// === PUBLIC FUNCTIONS ===
 bool setupModbusTCP() {
-  DEBUG_PRINTLN("🔧 Setting up Modbus TCP server...");
+  Serial.println("🔗 Initializing Modbus TCP Server...");
   
-  setModbusState(MODBUS_STATE_INITIALIZING);
-  
-  // Initialize all holding registers to 0
+  // Initialize holding registers
   for (int i = 0; i < MODBUS_MAX_HOLDING_REGISTERS; i++) {
     holdingRegisters[i] = 0;
   }
   
-  // Initialize statistics
-  memset(&modbusStats, 0, sizeof(ModbusStats));
-  
   // Start TCP server
-  modbusServer.begin();
-  modbusServer.setNoDelay(true);
+  modbusServerSocket.begin();
+  if (!modbusServerSocket) {
+    Serial.println("❌ Failed to start Modbus TCP server");
+    currentModbusState = MODBUS_STATE_ERROR;
+    return false;
+  }
   
-  DEBUG_PRINTF("✅ Modbus TCP server ready!\n");
-  DEBUG_PRINTF("📊 Total registers available: %d\n", MODBUS_MAX_HOLDING_REGISTERS);
-  DEBUG_PRINTF("🔋 Batteries supported: %d (each uses 125 registers)\n", MAX_BMS_NODES);
-  DEBUG_PRINTF("🎯 Server IP: %s:%d\n", WiFi.localIP().toString().c_str(), MODBUS_TCP_PORT);
+  currentModbusState = MODBUS_STATE_RUNNING;
   
-  // Print complete register map
-  printCompleteModbusRegisterMap();
+  Serial.printf("✅ Modbus TCP Server started on port %d\n", MODBUS_TCP_PORT);
+  Serial.printf("📊 Holding registers: %d (0x0000 - 0x%04X)\n", 
+                MODBUS_MAX_HOLDING_REGISTERS, MODBUS_MAX_HOLDING_REGISTERS - 1);
+  Serial.printf("🔋 BMS modules: %d x %d registers each\n", 
+                MAX_BMS_NODES, BMS_REGISTERS_PER_MODULE);
   
-  setModbusState(MODBUS_STATE_RUNNING);
+  // Print register map
+  printModbusRegisterMap();
   
   return true;
 }
 
+void shutdownModbusTCP() {
+  if (currentModbusClient && currentModbusClient.connected()) {
+    currentModbusClient.stop();
+  }
+  modbusServerSocket.end();
+  currentModbusState = MODBUS_STATE_UNINITIALIZED;
+  Serial.println("🔗 Modbus TCP Server shutdown");
+}
+
+bool restartModbusTCP() {
+  Serial.println("🔄 Restarting Modbus TCP Server...");
+  shutdownModbusTCP();
+  delay(1000);
+  return setupModbusTCP();
+}
+
+// === MODBUS TCP PROCESSING ===
+
 void processModbusTCP() {
-  // Handle client connections
+  // Accept new clients if none connected
   if (!currentModbusClient || !currentModbusClient.connected()) {
-    currentModbusClient = modbusServer.available();
+    currentModbusClient = modbusServerSocket.available();
     if (currentModbusClient) {
-      modbusStats.clientConnections++;
-      lastClientActivity = millis();
-      
-      if (modbusDebugEnabled) {
-        DEBUG_PRINTF("🔗 New Modbus TCP client connected: %s:%d\n", 
-                     currentModbusClient.remoteIP().toString().c_str(),
-                     currentModbusClient.remotePort());
-      }
+      Serial.printf("🔗 New Modbus TCP client connected: %s\n", 
+                    currentModbusClient.remoteIP().toString().c_str());
+      modbusStats.connectionCount++;
+      currentModbusState = MODBUS_STATE_CLIENT_CONNECTED;
     }
   }
   
-  // Process client requests
+  // Handle existing client requests
   if (currentModbusClient && currentModbusClient.connected()) {
     if (currentModbusClient.available()) {
-      lastClientActivity = millis();
       handleModbusRequest(currentModbusClient);
     }
-    
-    // Check for client timeout
-    if (millis() - lastClientActivity > MODBUS_CLIENT_TIMEOUT_MS) {
-      DEBUG_PRINTLN("⏰ Modbus client timeout - disconnecting");
-      currentModbusClient.stop();
-      modbusStats.clientTimeouts++;
-    }
+  } else if (currentModbusState == MODBUS_STATE_CLIENT_CONNECTED) {
+    // Client disconnected
+    Serial.println("🔗 Modbus TCP client disconnected");
+    modbusStats.disconnectionCount++;
+    currentModbusState = MODBUS_STATE_RUNNING;
   }
 }
 
-// === 🔥 EXTENDED HEARTBEAT WITH ALL MULTIPLEXER DATA (z v3.0.0) ===
-void printBMSHeartbeatExtended(uint8_t nodeId) {
-  BMSData* bms = getBMSData(nodeId);
-  if (!bms) return;
+void handleModbusRequest(WiFiClient& client) {
+  if (!client.available()) return;
   
-  int batteryIndex = getBMSIndexByNodeId(nodeId);
-  uint16_t baseAddr = batteryIndex * 125;
+  uint8_t request[256];  // Buffer for larger requests
+  int bytesRead = client.readBytes(request, sizeof(request));
   
-  Serial.printf("🔋 BMS%d [Modbus:%d]: %.2fV %.2fA %.1f%% SOH:%.1f%% %s\n",
-                nodeId, baseAddr, bms->batteryVoltage, bms->batteryCurrent, 
-                bms->soc, bms->soh, bms->masterError ? "⚠️ERR" : "✅OK");
-  
-  // Show key multiplexer data if available
-  if (bms->frame490Count > 0) {
-    Serial.printf("   📋 SN:%d/%d HW:%d.%d SW:%d.%d Cycles:%d Energy:%.1fkWh Cap:%.2fAh\n",
-                  bms->serialNumber1, bms->serialNumber0,
-                  bms->hwVersion1, bms->hwVersion0,
-                  bms->swVersion1, bms->swVersion0,
-                  bms->batteryCycles, bms->factoryEnergy, bms->designCapacity);
-    
-    if (bms->errorsMap0 || bms->errorsMap1 || bms->errorsMap2 || bms->errorsMap3) {
-      Serial.printf("   ⚠️ Errors: [0x%04X 0x%04X 0x%04X 0x%04X]\n",
-                    bms->errorsMap0, bms->errorsMap1, bms->errorsMap2, bms->errorsMap3);
-    }
+  if (bytesRead < 8) {  // Minimum: MBAP (7) + Function Code (1)
+    Serial.printf("⚠️ Modbus request too short: %d bytes\n", bytesRead);
+    modbusStats.totalErrors++;
+    return;
   }
-  
-  // Show frame statistics
-  Serial.printf("   📊 Frames: 190:%d 290:%d 310:%d 390:%d 410:%d 510:%d 490:%d 1B0:%d 710:%d\n",
-                bms->frame190Count, bms->frame290Count, bms->frame310Count,
-                bms->frame390Count, bms->frame410Count, bms->frame510Count,
-                bms->frame490Count, bms->frame1B0Count, bms->frame710Count);
-}
-
-// === 🔥 KOMPLETNA MAPA REJESTRÓW MODBUS (z v3.0.0) ===
-void printCompleteModbusRegisterMap() {
-  Serial.println();
-  Serial.println(F("📋 KOMPLETNA MAPA REJESTRÓW MODBUS TCP - 16 BATERII x 125 REJESTRÓW"));
-  Serial.println(F("========================================================================"));
-  Serial.println(F("🎯 KAŻDA BATERIA: 125 rejestrów (base = battery_index * 125)"));
-  Serial.println();
-  Serial.println(F("📊 STRUKTURA REJESTRÓW DLA KAŻDEJ BATERII:"));
-  Serial.println(F("Base+0-9:    Frame 190 - Basic Data (voltage, current, energy, SOC)"));
-  Serial.println(F("Base+10-19:  Frame 190 - Error Flags (8 błędów + 2 reserved)"));
-  Serial.println(F("Base+20-29:  Frame 290 - Cell Voltages (min/mean voltage, lokalizacje)"));
-  Serial.println(F("Base+30-39:  Frame 310 - SOH/Temperature (SOH, cell voltage, temp, DCiR)"));
-  Serial.println(F("Base+40-49:  Frame 390 - Max Voltages (cell max voltage, voltage delta)"));
-  Serial.println(F("Base+50-59:  Frame 410 - Temperatures (cell max temp, ready states)"));
-  Serial.println(F("Base+60-69:  Frame 510 - Power Limits (charge/discharge limits, I/O)"));
-  Serial.println(F("Base+70-89:  🔥 Frame 490 - Multiplexed Data (20 kluczowych parametrów)"));
-  Serial.println(F("Base+90-109: 🔥 Error Maps & Versions (20 rejestrów diagnostycznych)"));
-  Serial.println(F("Base+110-119: 🔥 Frame 710 & Communication Status (10 rejestrów)"));
-  Serial.println(F("Base+120-124: 🔥 Extended Counters & Node ID (5 rejestrów)"));
-  Serial.println();
-  Serial.println(F("🔥 KLUCZOWE REJESTRY MULTIPLEKSERA (Frame 490):"));
-  Serial.println(F("Base+70: Mux Type              | Base+71: Mux Value"));
-  Serial.println(F("Base+72-73: Serial Number       | Base+74-77: HW/SW Versions"));
-  Serial.println(F("Base+78: Factory Energy [0.1kWh]| Base+79: Design Capacity [mAh]"));
-  Serial.println(F("Base+80: System Energy [0.1kWh] | Base+81-84: Temperatures [0.1°C]"));
-  Serial.println(F("Base+85: Humidity [%]           | Base+86-87: Time to Full [min]"));
-  Serial.println(F("Base+88: Battery Cycles         | Base+89: Detected IMBs"));
-  Serial.println();
-  Serial.println(F("🔥 REJESTRY DIAGNOSTYCZNE (90-109):"));
-  Serial.println(F("Base+90-93: Error Maps [bits]   | Base+94-99: Versions"));
-  Serial.println(F("Base+100: Config CRC            | Base+101: IoT Status"));
-  Serial.println(F("Base+102: Power On Counter      | Base+103-106: CRC Values"));
-  Serial.println(F("Base+107-109: Charge Thresholds"));
-  Serial.println();
-  Serial.println(F("🔥 REJESTRY KOMUNIKACJI (110-119):"));
-  Serial.println(F("Base+110: CANopen State         | Base+111: Communication OK"));
-  Serial.println(F("Base+112-113: Packets Received  | Base+114: Parse Errors"));
-  Serial.println(F("Base+115-119: Frame Counters (190,290,310,490,710)"));
-  Serial.println();
-  Serial.println(F("📍 PRZYKŁADY ADRESÓW BATERII:"));
-  Serial.println(F("Bateria 0: 0-124      | Bateria 1: 125-249    | Bateria 2: 250-374"));
-  Serial.println(F("Bateria 3: 375-499    | Bateria 4: 500-624    | Bateria 5: 625-749"));
-  Serial.println(F("..."));
-  Serial.println(F("Bateria 15: 1875-1999"));
-  Serial.println();
-  Serial.println(F("🚀 OBSŁUGIWANE RAMKI CAN:"));
-  Serial.println(F("0x190+ID: Basic data           | 0x290+ID: Cell voltages"));
-  Serial.println(F("0x310+ID: SOH/temperature      | 0x390+ID: Max voltages"));
-  Serial.println(F("0x410+ID: Temperatures         | 0x510+ID: Power limits"));
-  Serial.println(F("0x490+ID: 🔥 54 typy multipleksera | 0x1B0+ID: Additional data"));
-  Serial.println(F("0x710+ID: CANopen state"));
-  Serial.println(F("========================================================================"));
-  Serial.println();
-}
-
-// === PRIVATE FUNCTIONS ===
-static void handleModbusRequest(WiFiClient& client) {
-  int bytesAvailable = client.available();
-  if (bytesAvailable < 8) return; // Minimum MBAP + PDU header
-  
-  int bytesRead = client.read(modbusRequestBuffer, min(bytesAvailable, MODBUS_MAX_FRAME_SIZE));
   
   modbusStats.totalRequests++;
   modbusStats.lastRequestTime = millis();
+  modbusStats.bytesReceived += bytesRead;
   
-  if (modbusDebugEnabled) {
-    printModbusRequest(modbusRequestBuffer, bytesRead);
-  }
+  // Parse MBAP Header
+  uint16_t transactionId = (request[0] << 8) | request[1];
+  uint16_t protocolId = (request[2] << 8) | request[3];
+  uint16_t length = (request[4] << 8) | request[5];
+  uint8_t slaveId = request[6];
   
-  if (!validateModbusRequest(modbusRequestBuffer, bytesRead)) {
-    modbusStats.invalidRequests++;
+  // Parse PDU
+  uint8_t functionCode = request[7];
+  
+  Serial.printf("📥 Modbus Request: TxID=%d SlaveID=%d Func=0x%02X Length=%d\n", 
+                transactionId, slaveId, functionCode, length);
+  
+  // Validate basic request parameters
+  if (protocolId != 0) {
+    Serial.printf("❌ Invalid protocol ID: %d (expected 0)\n", protocolId);
+    modbusStats.totalErrors++;
     return;
   }
   
-  // Parse MBAP header
-  uint16_t transactionId = (modbusRequestBuffer[0] << 8) | modbusRequestBuffer[1];
-  uint16_t protocolId = (modbusRequestBuffer[2] << 8) | modbusRequestBuffer[3];
-  uint16_t length = (modbusRequestBuffer[4] << 8) | modbusRequestBuffer[5];
-  uint8_t slaveId = modbusRequestBuffer[6];
-  uint8_t functionCode = modbusRequestBuffer[7];
-  
-  // Validate request (zgodnie z v3.0.0)
-  if (protocolId != 0 || slaveId != MODBUS_SLAVE_ID) {
-    DEBUG_PRINTF("❌ Invalid protocol ID (%d) or slave ID (%d)\n", protocolId, slaveId);
-    modbusStats.invalidRequests++;
+  if (slaveId != MODBUS_SLAVE_ID) {
+    Serial.printf("❌ Invalid slave ID: %d (expected %d)\n", slaveId, MODBUS_SLAVE_ID);
+    modbusStats.totalErrors++;
     return;
   }
   
-  // Copy MBAP header to response
-  modbusResponseBuffer[0] = modbusRequestBuffer[0]; // Transaction ID High
-  modbusResponseBuffer[1] = modbusRequestBuffer[1]; // Transaction ID Low
-  modbusResponseBuffer[2] = 0; // Protocol ID High
-  modbusResponseBuffer[3] = 0; // Protocol ID Low
-  modbusResponseBuffer[6] = slaveId; // Slave ID
-  
-  int responseLength = 0;
-  
-  // Process function code (zgodnie z v3.0.0)
+  // Handle different function codes
   switch (functionCode) {
     case MODBUS_FUNC_READ_HOLDING_REGISTERS:
-      modbusStats.readHoldingRegisterRequests++;
-      responseLength = processReadHoldingRegisters(modbusRequestBuffer, bytesRead, modbusResponseBuffer);
-      break;
-      
-    case MODBUS_FUNC_READ_INPUT_REGISTERS:
-      modbusStats.readInputRegisterRequests++;
-      responseLength = processReadInputRegisters(modbusRequestBuffer, bytesRead, modbusResponseBuffer);
+      handleReadHoldingRegisters(client, request, bytesRead);
       break;
       
     case MODBUS_FUNC_WRITE_SINGLE_REGISTER:
-      modbusStats.writeSingleRegisterRequests++;
-      responseLength = processWriteSingleRegister(modbusRequestBuffer, bytesRead, modbusResponseBuffer);
+      handleWriteSingleRegister(client, request, bytesRead);
       break;
       
     case MODBUS_FUNC_WRITE_MULTIPLE_REGISTERS:
-      modbusStats.writeMultipleRegisterRequests++;
-      responseLength = processWriteMultipleRegisters(modbusRequestBuffer, bytesRead, modbusResponseBuffer);
+      handleWriteMultipleRegisters(client, request, bytesRead);
       break;
       
     default:
-      DEBUG_PRINTF("❌ Unsupported function code: 0x%02X\n", functionCode);
-      responseLength = createExceptionResponse(functionCode, MODBUS_EXCEPTION_ILLEGAL_FUNCTION, modbusResponseBuffer);
-      modbusStats.exceptionResponses++;
+      Serial.printf("❌ Unsupported function code: 0x%02X\n", functionCode);
+      sendErrorResponse(client, functionCode, MODBUS_EXCEPTION_ILLEGAL_FUNCTION, transactionId);
+      modbusStats.totalErrors++;
       break;
-  }
-  
-  // Send response
-  if (responseLength > 0) {
-    // Set length in MBAP header
-    uint16_t pduLength = responseLength - 6; // Exclude MBAP header
-    modbusResponseBuffer[4] = (pduLength >> 8) & 0xFF;
-    modbusResponseBuffer[5] = pduLength & 0xFF;
-    
-    client.write(modbusResponseBuffer, responseLength);
-    client.flush();
-    modbusStats.totalResponses++;
-    
-    if (modbusDebugEnabled) {
-      printModbusResponse(modbusResponseBuffer, responseLength);
-    }
   }
 }
 
-static int processReadHoldingRegisters(uint8_t* request, int requestLen, uint8_t* response) {
-  if (requestLen < 12) return 0; // Invalid request length
+// === MODBUS FUNCTION HANDLERS ===
+
+void handleReadHoldingRegisters(WiFiClient& client, uint8_t* request, int requestLength) {
+  if (requestLength < 12) {  // MBAP (7) + Function (1) + Address (2) + Count (2)
+    modbusStats.totalErrors++;
+    return;
+  }
   
+  uint16_t transactionId = (request[0] << 8) | request[1];
   uint16_t startAddress = (request[8] << 8) | request[9];
   uint16_t registerCount = (request[10] << 8) | request[11];
   
-  // Validate parameters (zgodnie z v3.0.0)
-  if (startAddress >= MODBUS_MAX_HOLDING_REGISTERS || 
-      (startAddress + registerCount) > MODBUS_MAX_HOLDING_REGISTERS ||
-      registerCount == 0 || registerCount > 125) {
-    DEBUG_PRINTF("❌ Register address out of range: %d + %d > %d\n", 
+  // Validate register range
+  if (!isValidRegisterRange(startAddress, registerCount)) {
+    Serial.printf("❌ Invalid register range: %d + %d > %d\n", 
                   startAddress, registerCount, MODBUS_MAX_HOLDING_REGISTERS);
-    return createExceptionResponse(MODBUS_FUNC_READ_HOLDING_REGISTERS, 
-                                 MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, response);
+    sendErrorResponse(client, MODBUS_FUNC_READ_HOLDING_REGISTERS, 
+                     MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, transactionId);
+    modbusStats.totalErrors++;
+    return;
   }
   
   // Build response
-  response[7] = MODBUS_FUNC_READ_HOLDING_REGISTERS; // Function code
-  response[8] = registerCount * 2; // Byte count
+  int responseLength = 9 + (registerCount * 2);  // MBAP + Function + ByteCount + Data
+  uint8_t* response = new uint8_t[responseLength];
   
-  // Copy register values
+  // MBAP Header
+  response[0] = request[0];  // Transaction ID High
+  response[1] = request[1];  // Transaction ID Low
+  response[2] = 0;           // Protocol ID High
+  response[3] = 0;           // Protocol ID Low
+  response[4] = ((3 + (registerCount * 2)) >> 8) & 0xFF;  // Length High
+  response[5] = (3 + (registerCount * 2)) & 0xFF;         // Length Low
+  response[6] = MODBUS_SLAVE_ID;  // Slave ID
+  
+  // PDU
+  response[7] = MODBUS_FUNC_READ_HOLDING_REGISTERS;
+  response[8] = registerCount * 2;  // Byte count
+  
+  // Register data
   for (int i = 0; i < registerCount; i++) {
     uint16_t regValue = holdingRegisters[startAddress + i];
-    response[9 + i * 2] = (regValue >> 8) & 0xFF; // High byte
-    response[10 + i * 2] = regValue & 0xFF;       // Low byte
+    response[9 + (i * 2)] = (regValue >> 8) & 0xFF;      // High byte
+    response[9 + (i * 2) + 1] = regValue & 0xFF;         // Low byte
   }
   
-  DEBUG_PRINTF("✅ Read %d registers from address %d\n", registerCount, startAddress);
+  sendModbusResponse(client, response, responseLength);
+  delete[] response;
   
-  return 9 + registerCount * 2; // MBAP header + PDU
+  Serial.printf("✅ Read %d registers from address %d\n", registerCount, startAddress);
 }
 
-static int processReadInputRegisters(uint8_t* request, int requestLen, uint8_t* response) {
-  // Input registers are the same as holding registers in this implementation
-  return processReadHoldingRegisters(request, requestLen, response);
-}
-
-static int processWriteSingleRegister(uint8_t* request, int requestLen, uint8_t* response) {
-  if (requestLen < 12) return 0; // Invalid request length
-  
-  uint16_t address = (request[8] << 8) | request[9];
-  uint16_t value = (request[10] << 8) | request[11];
-  
-  // Validate address
-  if (address >= MODBUS_MAX_HOLDING_REGISTERS) {
-    return createExceptionResponse(MODBUS_FUNC_WRITE_SINGLE_REGISTER, 
-                                 MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, response);
+void handleWriteSingleRegister(WiFiClient& client, uint8_t* request, int requestLength) {
+  if (requestLength < 12) {  // MBAP (7) + Function (1) + Address (2) + Value (2)
+    modbusStats.totalErrors++;
+    return;
   }
   
-  // Write register (for now, just acknowledge - no actual writing to BMS)
-  // holdingRegisters[address] = value; // Uncomment to allow writing
+  uint16_t transactionId = (request[0] << 8) | request[1];
+  uint16_t registerAddress = (request[8] << 8) | request[9];
+  uint16_t registerValue = (request[10] << 8) | request[11];
   
-  DEBUG_PRINTF("📝 Write single register %d = %d (acknowledged but not written)\n", address, value);
+  // Validate register address
+  if (!isValidRegisterAddress(registerAddress)) {
+    Serial.printf("❌ Invalid register address: %d\n", registerAddress);
+    sendErrorResponse(client, MODBUS_FUNC_WRITE_SINGLE_REGISTER, 
+                     MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, transactionId);
+    modbusStats.totalErrors++;
+    return;
+  }
   
-  // Echo request as response
-  memcpy(response + 7, request + 7, 5); // Function code + address + value
+  // Write register
+  holdingRegisters[registerAddress] = registerValue;
   
-  return 12; // MBAP header + PDU
+  // Echo request as response (standard for write single register)
+  sendModbusResponse(client, request, requestLength);
+  
+  Serial.printf("✅ Write register %d = %d\n", registerAddress, registerValue);
 }
 
-static int processWriteMultipleRegisters(uint8_t* request, int requestLen, uint8_t* response) {
-  if (requestLen < 13) return 0; // Invalid request length
+void handleWriteMultipleRegisters(WiFiClient& client, uint8_t* request, int requestLength) {
+  if (requestLength < 13) {  // MBAP (7) + Function (1) + Address (2) + Count (2) + ByteCount (1)
+    modbusStats.totalErrors++;
+    return;
+  }
   
+  uint16_t transactionId = (request[0] << 8) | request[1];
   uint16_t startAddress = (request[8] << 8) | request[9];
   uint16_t registerCount = (request[10] << 8) | request[11];
   uint8_t byteCount = request[12];
   
   // Validate parameters
-  if (startAddress >= MODBUS_MAX_HOLDING_REGISTERS || 
-      (startAddress + registerCount) > MODBUS_MAX_HOLDING_REGISTERS ||
-      registerCount == 0 || registerCount > 123 ||
-      byteCount != registerCount * 2 ||
-      requestLen < (13 + byteCount)) {
-    return createExceptionResponse(MODBUS_FUNC_WRITE_MULTIPLE_REGISTERS, 
-                                 MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS, response);
+  if (!isValidRegisterRange(startAddress, registerCount) || 
+      byteCount != (registerCount * 2) ||
+      requestLength < (13 + byteCount)) {
+    Serial.printf("❌ Invalid write multiple registers parameters\n");
+    sendErrorResponse(client, MODBUS_FUNC_WRITE_MULTIPLE_REGISTERS, 
+                     MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE, transactionId);
+    modbusStats.totalErrors++;
+    return;
   }
   
-  // Write registers (for now, just acknowledge - no actual writing to BMS)
-  /*
+  // Write registers
   for (int i = 0; i < registerCount; i++) {
-    uint16_t value = (request[13 + i * 2] << 8) | request[14 + i * 2];
-    holdingRegisters[startAddress + i] = value;
+    uint16_t regValue = (request[13 + (i * 2)] << 8) | request[13 + (i * 2) + 1];
+    holdingRegisters[startAddress + i] = regValue;
   }
-  */
-  
-  DEBUG_PRINTF("📝 Write multiple registers %d-%d (acknowledged but not written)\n", 
-               startAddress, startAddress + registerCount - 1);
   
   // Build response
-  response[7] = MODBUS_FUNC_WRITE_MULTIPLE_REGISTERS; // Function code
-  response[8] = (startAddress >> 8) & 0xFF; // Start address high
-  response[9] = startAddress & 0xFF;        // Start address low
-  response[10] = (registerCount >> 8) & 0xFF; // Register count high
-  response[11] = registerCount & 0xFF;        // Register count low
+  uint8_t response[12];
+  memcpy(response, request, 12);  // Copy MBAP + Function + Address + Count
   
-  return 12; // MBAP header + PDU
+  sendModbusResponse(client, response, 12);
+  
+  Serial.printf("✅ Write %d registers starting from address %d\n", registerCount, startAddress);
 }
 
-static int createExceptionResponse(uint8_t functionCode, uint8_t exceptionCode, uint8_t* response) {
-  response[7] = functionCode | 0x80; // Function code with error bit
-  response[8] = exceptionCode;       // Exception code
-  
-  DEBUG_PRINTF("❌ Exception response: FC=0x%02X EC=0x%02X\n", functionCode, exceptionCode);
-  
-  return 9; // MBAP header + error PDU
+// === UTILITY FUNCTIONS ===
+
+void sendModbusResponse(WiFiClient& client, uint8_t* response, int length) {
+  if (client.connected()) {
+    client.write(response, length);
+    client.flush();
+    modbusStats.totalResponses++;
+    modbusStats.bytesSent += length;
+    
+    Serial.printf("📤 Modbus Response sent: %d bytes\n", length);
+  }
 }
 
-static bool validateModbusRequest(uint8_t* request, int length) {
-  if (length < 8) return false; // Too short
-  if (length > MODBUS_MAX_FRAME_SIZE) return false; // Too long
+void sendErrorResponse(WiFiClient& client, uint8_t functionCode, uint8_t exceptionCode, uint16_t transactionId) {
+  uint8_t response[9];
   
-  // Validate MBAP header
-  uint16_t protocolId = (request[2] << 8) | request[3];
-  uint16_t mbapLength = (request[4] << 8) | request[5];
+  // MBAP Header
+  response[0] = (transactionId >> 8) & 0xFF;
+  response[1] = transactionId & 0xFF;
+  response[2] = 0;  // Protocol ID High
+  response[3] = 0;  // Protocol ID Low
+  response[4] = 0;  // Length High
+  response[5] = 3;  // Length Low (Unit ID + Error Function + Exception Code)
+  response[6] = MODBUS_SLAVE_ID;
   
-  if (protocolId != 0) return false; // Must be 0 for Modbus TCP
-  if (mbapLength != (length - 6)) return false; // Length mismatch
+  // PDU
+  response[7] = functionCode | 0x80;  // Error function code
+  response[8] = exceptionCode;
+  
+  sendModbusResponse(client, response, 9);
+  
+  Serial.printf("📤 Modbus Error Response: Func=0x%02X Exception=%d\n", 
+                functionCode, exceptionCode);
+}
+
+// === STATE AND HEALTH FUNCTIONS ===
+
+bool isModbusServerActive() {
+  return currentModbusState == MODBUS_STATE_RUNNING || 
+         currentModbusState == MODBUS_STATE_CLIENT_CONNECTED;
+}
+
+ModbusState_t getModbusState() {
+  return currentModbusState;
+}
+
+bool isModbusHealthy() {
+  return isModbusServerActive() && 
+         (modbusStats.totalErrors == 0 || 
+          (modbusStats.totalRequests > 0 && 
+           (modbusStats.totalErrors * 100 / modbusStats.totalRequests) < 10));
+}
+
+// === DATA CONVERSION FUNCTIONS (bez domyślnych argumentów) ===
+
+uint16_t floatToModbusRegister(float value, float scale) {
+  int32_t scaledValue = (int32_t)(value * scale);
+  return (uint16_t)constrain(scaledValue, 0, 65535);
+}
+
+float modbusRegisterToFloat(uint16_t value, float scale) {
+  return (float)value / scale;
+}
+
+uint32_t floatToModbusRegisters32(float value, uint16_t* highReg, uint16_t* lowReg) {
+  uint32_t intValue = *(uint32_t*)&value;  // Float to bits
+  *highReg = (intValue >> 16) & 0xFFFF;
+  *lowReg = intValue & 0xFFFF;
+  return intValue;
+}
+
+float modbusRegisters32ToFloat(uint16_t highReg, uint16_t lowReg) {
+  uint32_t intValue = ((uint32_t)highReg << 16) | lowReg;
+  return *(float*)&intValue;  // Bits to float
+}
+
+// === CRC CALCULATION ===
+
+uint16_t calculateModbusCRC(uint8_t* data, int length) {
+  uint16_t crc = 0xFFFF;
+  for (int i = 0; i < length; i++) {
+    crc ^= data[i];
+    for (int j = 0; j < 8; j++) {
+      if (crc & 0x0001) {
+        crc >>= 1;
+        crc ^= 0xA001;
+      } else {
+        crc >>= 1;
+      }
+    }
+  }
+  return crc;
+}
+
+// === BMS DATA MAPPING ===
+
+void updateModbusRegisters(uint8_t nodeId) {
+  int batteryIndex = getBMSIndexByNodeId(nodeId);
+  if (batteryIndex < 0) return;
+  
+  BMSData* bms = getBMSData(nodeId);
+  if (!bms) return;
+  
+  mapBMSDataToModbus(nodeId, *bms);
+}
+
+void updateAllModbusRegisters() {
+  for (int i = 0; i < systemConfig.activeBmsNodes; i++) {
+    uint8_t nodeId = systemConfig.bmsNodeIds[i];
+    updateModbusRegisters(nodeId);
+  }
+}
+
+void mapBMSDataToModbus(uint8_t nodeId, const BMSData& bmsData) {
+  int batteryIndex = getBMSIndexByNodeId(nodeId);
+  if (batteryIndex < 0) return;
+  
+  uint16_t baseAddr = batteryIndex * BMS_REGISTERS_PER_MODULE;
+  
+  // Frame 190 - podstawowe dane (registers 0-9)
+  holdingRegisters[baseAddr + 0] = floatToModbusRegister(bmsData.batteryVoltage, 1000);    // mV
+  holdingRegisters[baseAddr + 1] = floatToModbusRegister(bmsData.batteryCurrent, 1000);    // mA
+  holdingRegisters[baseAddr + 2] = floatToModbusRegister(bmsData.remainingEnergy, 100);    // 0.01kWh
+  holdingRegisters[baseAddr + 3] = floatToModbusRegister(bmsData.soc, 10);                 // 0.1%
+  
+  // Frame 190 - flagi błędów (registers 10-19)
+  holdingRegisters[baseAddr + 10] = bmsData.masterError ? 1 : 0;
+  holdingRegisters[baseAddr + 11] = bmsData.cellVoltageError ? 1 : 0;
+  holdingRegisters[baseAddr + 12] = bmsData.cellTempMinError ? 1 : 0;
+  holdingRegisters[baseAddr + 13] = bmsData.cellTempMaxError ? 1 : 0;
+  holdingRegisters[baseAddr + 14] = bmsData.cellVoltageMinError ? 1 : 0;
+  holdingRegisters[baseAddr + 15] = bmsData.cellVoltageMaxError ? 1 : 0;
+  holdingRegisters[baseAddr + 16] = bmsData.systemShutdown ? 1 : 0;
+  holdingRegisters[baseAddr + 17] = bmsData.ibbVoltageSupplyError ? 1 : 0;
+  holdingRegisters[baseAddr + 18] = 0; // Reserved
+  holdingRegisters[baseAddr + 19] = 0; // Reserved
+  
+  // Frame 290 - napięcia ogniw (registers 20-29)
+  holdingRegisters[baseAddr + 20] = floatToModbusRegister(bmsData.cellMinVoltage, 10000);  // 0.1mV
+  holdingRegisters[baseAddr + 21] = floatToModbusRegister(bmsData.cellMeanVoltage, 10000); // 0.1mV
+  holdingRegisters[baseAddr + 22] = bmsData.minVoltageBlock;
+  holdingRegisters[baseAddr + 23] = bmsData.minVoltageCell;
+  holdingRegisters[baseAddr + 24] = bmsData.minVoltageString;
+  holdingRegisters[baseAddr + 25] = bmsData.balancingTempMax;
+  holdingRegisters[baseAddr + 26] = 0; // Reserved
+  holdingRegisters[baseAddr + 27] = 0; // Reserved
+  holdingRegisters[baseAddr + 28] = 0; // Reserved
+  holdingRegisters[baseAddr + 29] = 0; // Reserved
+  
+  // Frame 310 - SOH, temperatura, impedancja (registers 30-39)
+  holdingRegisters[baseAddr + 30] = floatToModbusRegister(bmsData.soh, 10);               // 0.1%
+  holdingRegisters[baseAddr + 31] = floatToModbusRegister(bmsData.cellVoltage, 10);       // 0.1mV
+  holdingRegisters[baseAddr + 32] = floatToModbusRegister(bmsData.cellTemperature, 10);   // 0.1°C
+  holdingRegisters[baseAddr + 33] = floatToModbusRegister(bmsData.dcir, 10);              // 0.1mΩ
+  holdingRegisters[baseAddr + 34] = bmsData.nonEqualStringsRamp ? 1 : 0;
+  holdingRegisters[baseAddr + 35] = bmsData.dynamicLimitationTimer ? 1 : 0;
+  holdingRegisters[baseAddr + 36] = bmsData.overcurrentTimer ? 1 : 0;
+  holdingRegisters[baseAddr + 37] = bmsData.channelMultiplexor;
+  holdingRegisters[baseAddr + 38] = 0; // Reserved
+  holdingRegisters[baseAddr + 39] = 0; // Reserved
+  
+  // Frame 390 - maksymalne napięcia (registers 40-49)
+  holdingRegisters[baseAddr + 40] = floatToModbusRegister(bmsData.cellMaxVoltage, 10000); // 0.1mV
+  holdingRegisters[baseAddr + 41] = floatToModbusRegister(bmsData.cellVoltageDelta, 10000); // 0.1mV
+  holdingRegisters[baseAddr + 42] = bmsData.maxVoltageBlock;
+  holdingRegisters[baseAddr + 43] = bmsData.maxVoltageCell;
+  holdingRegisters[baseAddr + 44] = bmsData.maxVoltageString;
+  holdingRegisters[baseAddr + 45] = bmsData.afeTemperatureMax;
+  holdingRegisters[baseAddr + 46] = 0; // Reserved
+  holdingRegisters[baseAddr + 47] = 0; // Reserved
+  holdingRegisters[baseAddr + 48] = 0; // Reserved
+  holdingRegisters[baseAddr + 49] = 0; // Reserved
+  
+  // Frame 410 - temperatury i gotowość (registers 50-59)
+  holdingRegisters[baseAddr + 50] = floatToModbusRegister(bmsData.cellMaxTemperature, 10); // 0.1°C
+  holdingRegisters[baseAddr + 51] = floatToModbusRegister(bmsData.cellTempDelta, 10);      // 0.1°C
+  holdingRegisters[baseAddr + 52] = bmsData.maxTempString;
+  holdingRegisters[baseAddr + 53] = bmsData.maxTempBlock;
+  holdingRegisters[baseAddr + 54] = bmsData.maxTempSensor;
+  holdingRegisters[baseAddr + 55] = bmsData.readyToCharge ? 1 : 0;
+  holdingRegisters[baseAddr + 56] = bmsData.readyToDischarge ? 1 : 0;
+  holdingRegisters[baseAddr + 57] = 0; // Reserved
+  holdingRegisters[baseAddr + 58] = 0; // Reserved
+  holdingRegisters[baseAddr + 59] = 0; // Reserved
+  
+  // Frame 510 - limity mocy i I/O (registers 60-69)
+  holdingRegisters[baseAddr + 60] = floatToModbusRegister(bmsData.dccl, 1000);            // mA
+  holdingRegisters[baseAddr + 61] = floatToModbusRegister(bmsData.ddcl, 1000);            // mA
+  holdingRegisters[baseAddr + 62] = bmsData.input_IN02 ? 1 : 0;
+  holdingRegisters[baseAddr + 63] = bmsData.input_IN01 ? 1 : 0;
+  holdingRegisters[baseAddr + 64] = bmsData.relay_AUX4 ? 1 : 0;
+  holdingRegisters[baseAddr + 65] = bmsData.relay_AUX3 ? 1 : 0;
+  holdingRegisters[baseAddr + 66] = bmsData.relay_AUX2 ? 1 : 0;
+  holdingRegisters[baseAddr + 67] = bmsData.relay_AUX1 ? 1 : 0;
+  holdingRegisters[baseAddr + 68] = bmsData.relay_R2 ? 1 : 0;
+  holdingRegisters[baseAddr + 69] = bmsData.relay_R1 ? 1 : 0;
+  
+  // Frame 490 - multipleksowane dane (registers 70-89)
+  holdingRegisters[baseAddr + 70] = bmsData.mux490Type;                                   // Typ multipleksera
+  holdingRegisters[baseAddr + 71] = bmsData.mux490Value;                                  // Wartość multipleksera
+  holdingRegisters[baseAddr + 72] = bmsData.serialNumber0;                                // Serial number low
+  holdingRegisters[baseAddr + 73] = bmsData.serialNumber1;                                // Serial number high
+  holdingRegisters[baseAddr + 74] = bmsData.hwVersion0;                                   // HW version low
+  holdingRegisters[baseAddr + 75] = bmsData.hwVersion1;                                   // HW version high
+  holdingRegisters[baseAddr + 76] = bmsData.swVersion0;                                   // SW version low
+  holdingRegisters[baseAddr + 77] = bmsData.swVersion1;                                   // SW version high
+  holdingRegisters[baseAddr + 78] = floatToModbusRegister(bmsData.factoryEnergy, 10);     // 0.1 kWh
+  holdingRegisters[baseAddr + 79] = floatToModbusRegister(bmsData.designCapacity, 1000);  // mAh
+  holdingRegisters[baseAddr + 80] = floatToModbusRegister(bmsData.systemDesignedEnergy, 10); // 0.1 kWh
+  holdingRegisters[baseAddr + 81] = floatToModbusRegister(bmsData.ballancerTempMaxBlock, 10); // 0.1°C
+  holdingRegisters[baseAddr + 82] = floatToModbusRegister(bmsData.ltcTempMaxBlock, 10);   // 0.1°C
+  holdingRegisters[baseAddr + 83] = floatToModbusRegister(bmsData.inletTemperature, 10);  // 0.1°C
+  holdingRegisters[baseAddr + 84] = floatToModbusRegister(bmsData.outletTemperature, 10); // 0.1°C
+  holdingRegisters[baseAddr + 85] = bmsData.humidity;                                     // %
+  holdingRegisters[baseAddr + 86] = bmsData.timeToFullCharge;                             // min
+  holdingRegisters[baseAddr + 87] = bmsData.timeToFullDischarge;                          // min
+  holdingRegisters[baseAddr + 88] = bmsData.batteryCycles;                                // cycles
+  holdingRegisters[baseAddr + 89] = bmsData.numberOfDetectedIMBs;                         // count
+  
+  // Error maps & versions (registers 90-109)
+  holdingRegisters[baseAddr + 90] = bmsData.errorsMap0;        // Error map bits 0-15
+  holdingRegisters[baseAddr + 91] = bmsData.errorsMap1;        // Error map bits 16-31
+  holdingRegisters[baseAddr + 92] = bmsData.errorsMap2;        // Error map bits 32-47
+  holdingRegisters[baseAddr + 93] = bmsData.errorsMap3;        // Error map bits 48-63
+  holdingRegisters[baseAddr + 94] = bmsData.blVersion0;        // Bootloader version low
+  holdingRegisters[baseAddr + 95] = bmsData.blVersion1;        // Bootloader version high
+  holdingRegisters[baseAddr + 96] = bmsData.appVersion0;       // Application version low
+  holdingRegisters[baseAddr + 97] = bmsData.appVersion1;       // Application version high
+  holdingRegisters[baseAddr + 98] = bmsData.crcApp;            // Application CRC
+  holdingRegisters[baseAddr + 99] = bmsData.crcBoot;           // Bootloader CRC
+  
+  // Extended multiplexed data (registers 100-109)
+  holdingRegisters[baseAddr + 100] = floatToModbusRegister(bmsData.balancingEnergy, 100); // Wh
+  holdingRegisters[baseAddr + 101] = floatToModbusRegister(bmsData.maxDischargePower, 1); // W
+  holdingRegisters[baseAddr + 102] = floatToModbusRegister(bmsData.maxChargePower, 1);    // W
+  holdingRegisters[baseAddr + 103] = floatToModbusRegister(bmsData.maxDischargeEnergy, 10); // 0.1kWh
+  holdingRegisters[baseAddr + 104] = floatToModbusRegister(bmsData.maxChargeEnergy, 10);  // 0.1kWh
+  holdingRegisters[baseAddr + 105] = floatToModbusRegister(bmsData.chargeEnergy0, 10);    // 0.1kWh
+  holdingRegisters[baseAddr + 106] = floatToModbusRegister(bmsData.chargeEnergy1, 10);    // 0.1kWh
+  holdingRegisters[baseAddr + 107] = floatToModbusRegister(bmsData.dischargeEnergy0, 10); // 0.1kWh
+  holdingRegisters[baseAddr + 108] = floatToModbusRegister(bmsData.dischargeEnergy1, 10); // 0.1kWh
+  holdingRegisters[baseAddr + 109] = floatToModbusRegister(bmsData.recuperativeEnergy0, 10); // 0.1kWh
+  
+  // Frame 710 & komunikacja (registers 110-119)
+  holdingRegisters[baseAddr + 110] = bmsData.canopenState;                                // CANopen state
+  holdingRegisters[baseAddr + 111] = bmsData.communicationOk ? 1 : 0;                     // Communication OK
+  holdingRegisters[baseAddr + 112] = bmsData.packetsReceived & 0xFFFF;                    // Packets received low
+  holdingRegisters[baseAddr + 113] = (bmsData.packetsReceived >> 16) & 0xFFFF;            // Packets received high
+  holdingRegisters[baseAddr + 114] = bmsData.parseErrors;                                 // Parse errors
+  holdingRegisters[baseAddr + 115] = bmsData.frame190Count & 0xFFFF;                      // Frame counts
+  holdingRegisters[baseAddr + 116] = bmsData.frame290Count & 0xFFFF;
+  holdingRegisters[baseAddr + 117] = bmsData.frame310Count & 0xFFFF;
+  holdingRegisters[baseAddr + 118] = bmsData.frame490Count & 0xFFFF;                      // Multiplexed frame count
+  holdingRegisters[baseAddr + 119] = bmsData.frame710Count & 0xFFFF;                      // CANopen frame count
+  
+  // Reserved area (registers 120-124)
+  holdingRegisters[baseAddr + 120] = 0; // Reserved
+  holdingRegisters[baseAddr + 121] = 0; // Reserved
+  holdingRegisters[baseAddr + 122] = 0; // Reserved
+  holdingRegisters[baseAddr + 123] = 0; // Reserved
+  holdingRegisters[baseAddr + 124] = 0; // Reserved
+}
+
+// === DIAGNOSTICS AND MONITORING ===
+
+void printModbusStatistics() {
+  Serial.println("📊 === MODBUS TCP STATISTICS ===");
+  Serial.printf("🔗 State: %s\n", 
+                currentModbusState == MODBUS_STATE_RUNNING ? "Running" :
+                currentModbusState == MODBUS_STATE_CLIENT_CONNECTED ? "Client Connected" :
+                currentModbusState == MODBUS_STATE_ERROR ? "Error" : "Unknown");
+  Serial.printf("📥 Total Requests: %lu\n", modbusStats.totalRequests);
+  Serial.printf("📤 Total Responses: %lu\n", modbusStats.totalResponses);
+  Serial.printf("❌ Total Errors: %lu\n", modbusStats.totalErrors);
+  Serial.printf("🔗 Connections: %lu (disconnections: %lu)\n", 
+                modbusStats.connectionCount, modbusStats.disconnectionCount);
+  Serial.printf("📊 Data: %lu bytes received, %lu bytes sent\n", 
+                modbusStats.bytesReceived, modbusStats.bytesSent);
+  
+  if (modbusStats.totalRequests > 0) {
+    float errorRate = (float)modbusStats.totalErrors * 100.0 / modbusStats.totalRequests;
+    Serial.printf("📈 Error Rate: %.1f%%\n", errorRate);
+  }
+  
+  if (modbusStats.lastRequestTime > 0) {
+    unsigned long timeSinceLastRequest = millis() - modbusStats.lastRequestTime;
+    Serial.printf("⏰ Last Request: %lu ms ago\n", timeSinceLastRequest);
+  }
+  
+  Serial.println("================================");
+}
+
+void printModbusRegisterMap() {
+  Serial.println("📊 === MODBUS REGISTER MAP ===");
+  Serial.printf("📍 Total Registers: %d (0x0000 - 0x%04X)\n", 
+                MODBUS_MAX_HOLDING_REGISTERS, MODBUS_MAX_HOLDING_REGISTERS - 1);
+  Serial.printf("🔋 BMS Modules: %d x %d registers each\n", 
+                MAX_BMS_NODES, BMS_REGISTERS_PER_MODULE);
+  Serial.println();
+  
+  Serial.println("🗺️ REGISTER LAYOUT PER BMS MODULE:");
+  Serial.println("   Base+0-9:   Frame 190 (voltage, current, energy, soc)");
+  Serial.println("   Base+10-19: Frame 190 error flags");
+  Serial.println("   Base+20-29: Frame 290 (cell voltages)");
+  Serial.println("   Base+30-39: Frame 310 (soh, temperature, dcir)");
+  Serial.println("   Base+40-49: Frame 390 (max voltages)");
+  Serial.println("   Base+50-59: Frame 410 (temperatures, ready states)");
+  Serial.println("   Base+60-69: Frame 510 (power limits, I/O)");
+  Serial.println("   Base+70-89: Frame 490 (multiplexed data)");
+  Serial.println("   Base+90-109: Error maps & versions");
+  Serial.println("   Base+110-119: Frame 710 & communication");
+  Serial.println("   Base+120-124: Reserved");
+  Serial.println();
+  
+  Serial.println("🎯 EXAMPLE BMS MODULE ADDRESSES:");
+  for (int i = 0; i < min(4, MAX_BMS_NODES); i++) {
+    uint16_t baseAddr = i * BMS_REGISTERS_PER_MODULE;
+    Serial.printf("   BMS%d: %d-%d (0x%04X-0x%04X)\n", 
+                  i + 1, baseAddr, baseAddr + BMS_REGISTERS_PER_MODULE - 1,
+                  baseAddr, baseAddr + BMS_REGISTERS_PER_MODULE - 1);
+  }
+  if (MAX_BMS_NODES > 4) {
+    Serial.println("   ... (and more)");
+  }
+  Serial.println("==============================");
+}
+
+void printModbusClientConnections() {
+  Serial.println("🔗 === MODBUS CLIENT CONNECTIONS ===");
+  
+  if (currentModbusClient && currentModbusClient.connected()) {
+    Serial.printf("✅ Active Client: %s\n", currentModbusClient.remoteIP().toString().c_str());
+    Serial.printf("   Port: %d\n", currentModbusClient.remotePort());
+    Serial.printf("   Connected: %lu ms ago\n", millis() - modbusStats.lastRequestTime);
+  } else {
+    Serial.println("❌ No active client connections");
+  }
+  
+  Serial.printf("📊 Connection History:\n");
+  Serial.printf("   Total Connections: %lu\n", modbusStats.connectionCount);
+  Serial.printf("   Total Disconnections: %lu\n", modbusStats.disconnectionCount);
+  Serial.println("=====================================");
+}
+
+// === ERROR HANDLING ===
+
+const char* getModbusErrorString(uint8_t exceptionCode) {
+  switch (exceptionCode) {
+    case MODBUS_EXCEPTION_ILLEGAL_FUNCTION: return "Illegal Function";
+    case MODBUS_EXCEPTION_ILLEGAL_DATA_ADDRESS: return "Illegal Data Address";
+    case MODBUS_EXCEPTION_ILLEGAL_DATA_VALUE: return "Illegal Data Value";
+    case MODBUS_EXCEPTION_SLAVE_DEVICE_FAILURE: return "Slave Device Failure";
+    default: return "Unknown Exception";
+  }
+}
+
+const char* getModbusFunctionName(uint8_t functionCode) {
+  switch (functionCode) {
+    case MODBUS_FUNC_READ_HOLDING_REGISTERS: return "Read Holding Registers";
+    case MODBUS_FUNC_WRITE_SINGLE_REGISTER: return "Write Single Register";
+    case MODBUS_FUNC_WRITE_MULTIPLE_REGISTERS: return "Write Multiple Registers";
+    default: return "Unknown Function";
+  }
+}
+
+void logModbusError(const char* context, uint8_t errorCode) {
+  Serial.printf("❌ Modbus Error in %s: %s (code %d)\n", 
+                context, getModbusErrorString(errorCode), errorCode);
+  modbusStats.totalErrors++;
+}
+
+// === VALIDATION FUNCTIONS ===
+
+bool validateModbusFrame(uint8_t* frame, int length) {
+  if (length < MODBUS_MBAP_HEADER_SIZE + 1) {  // Minimum: MBAP + Function Code
+    return false;
+  }
+  
+  // Check protocol ID (should be 0x0000)
+  uint16_t protocolId = (frame[MODBUS_MBAP_PROTOCOL_ID_OFFSET] << 8) | 
+                        frame[MODBUS_MBAP_PROTOCOL_ID_OFFSET + 1];
+  if (protocolId != 0) {
+    return false;
+  }
+  
+  // Check length field
+  uint16_t declaredLength = (frame[MODBUS_MBAP_LENGTH_OFFSET] << 8) | 
+                           frame[MODBUS_MBAP_LENGTH_OFFSET + 1];
+  if (declaredLength != (length - 6)) {  // Length field excludes transaction ID and protocol ID
+    return false;
+  }
+  
+  // Check unit ID
+  uint8_t unitId = frame[MODBUS_MBAP_UNIT_ID_OFFSET];
+  if (unitId != MODBUS_SLAVE_ID) {
+    return false;
+  }
   
   return true;
 }
 
-static void printModbusRequest(uint8_t* request, int length) {
-  DEBUG_PRINTF("📥 Modbus Request (%d bytes): ", length);
-  for (int i = 0; i < min(length, 20); i++) {
-    DEBUG_PRINTF("%02X ", request[i]);
-  }
-  if (length > 20) DEBUG_PRINT("...");
-  DEBUG_PRINTLN();
-  
-  if (length >= 12) {
-    uint16_t transactionId = (request[0] << 8) | request[1];
-    uint8_t slaveId = request[6];
-    uint8_t functionCode = request[7];
-    uint16_t startAddress = (request[8] << 8) | request[9];
-    uint16_t registerCount = (request[10] << 8) | request[11];
-    
-    DEBUG_PRINTF("   TxID=%d SlaveID=%d Func=0x%02X Addr=%d Count=%d\n", 
-                 transactionId, slaveId, functionCode, startAddress, registerCount);
-  }
-}
-
-static void printModbusResponse(uint8_t* response, int length) {
-  DEBUG_PRINTF("📤 Modbus Response (%d bytes): ", length);
-  for (int i = 0; i < min(length, 20); i++) {
-    DEBUG_PRINTF("%02X ", response[i]);
-  }
-  if (length > 20) DEBUG_PRINT("...");
-  DEBUG_PRINTLN();
-}
-
-// === PUBLIC UTILITY FUNCTIONS ===
-void updateModbusRegister(uint16_t address, uint16_t value) {
-  if (address < MODBUS_MAX_HOLDING_REGISTERS) {
-    holdingRegisters[address] = value;
-    lastRegisterUpdate = millis();
-  } else {
-    DEBUG_PRINTF("❌ Invalid Modbus register address: %d\n", address);
-  }
-}
-
-uint16_t readModbusRegister(uint16_t address) {
-  if (address < MODBUS_MAX_HOLDING_REGISTERS) {
-    return holdingRegisters[address];
-  } else {
-    DEBUG_PRINTF("❌ Invalid Modbus register address: %d\n", address);
-    return 0;
-  }
-}
-
-void setModbusState(ModbusState_t newState) {
-  ModbusState_t oldState = modbusState;
-  modbusState = newState;
-  
-  if (oldState != newState) {
-    DEBUG_PRINTF("🔄 Modbus state changed: %d -> %d\n", oldState, newState);
-  }
-}
-
-ModbusState_t getModbusState() {
-  return modbusState;
-}
-
-void enableModbusDebug(bool enable) {
-  modbusDebugEnabled = enable;
-  DEBUG_PRINTF("🔧 Modbus debug %s\n", enable ? "enabled" : "disabled");
-}
-
-void printModbusStatistics() {
-  DEBUG_PRINTLN("\n📊 === MODBUS TCP STATISTICS ===");
-  DEBUG_PRINTF("State: %d\n", modbusState);
-  DEBUG_PRINTF("Total Requests: %lu\n", modbusStats.totalRequests);
-  DEBUG_PRINTF("Total Responses: %lu\n", modbusStats.totalResponses);
-  DEBUG_PRINTF("Invalid Requests: %lu\n", modbusStats.invalidRequests);
-  DEBUG_PRINTF("Exception Responses: %lu\n", modbusStats.exceptionResponses);
-  DEBUG_PRINTF("Client Connections: %lu\n", modbusStats.clientConnections);
-  DEBUG_PRINTF("Client Timeouts: %lu\n", modbusStats.clientTimeouts);
-  DEBUG_PRINTF("Read Holding: %lu\n", modbusStats.readHoldingRegisterRequests);
-  DEBUG_PRINTF("Read Input: %lu\n", modbusStats.readInputRegisterRequests);
-  DEBUG_PRINTF("Write Single: %lu\n", modbusStats.writeSingleRegisterRequests);
-  DEBUG_PRINTF("Write Multiple: %lu\n", modbusStats.writeMultipleRegisterRequests);
-  
-  if (modbusStats.lastRequestTime > 0) {
-    DEBUG_PRINTF("Last Request: %lu ms ago\n", millis() - modbusStats.lastRequestTime);
-  } else {
-    DEBUG_PRINTLN("Last Request: Never");
+int parseModbusRequest(uint8_t* request, int length, uint16_t* transactionId, 
+                      uint8_t* functionCode, uint16_t* startAddress, uint16_t* count) {
+  if (!validateModbusFrame(request, length)) {
+    return -1;  // Invalid frame
   }
   
-  if (lastRegisterUpdate > 0) {
-    DEBUG_PRINTF("Last Register Update: %lu ms ago\n", millis() - lastRegisterUpdate);
-  } else {
-    DEBUG_PRINTLN("Last Register Update: Never");
+  *transactionId = (request[0] << 8) | request[1];
+  *functionCode = request[7];
+  
+  // Parse based on function code
+  switch (*functionCode) {
+    case MODBUS_FUNC_READ_HOLDING_REGISTERS:
+      if (length >= 12) {
+        *startAddress = (request[8] << 8) | request[9];
+        *count = (request[10] << 8) | request[11];
+        return 0;  // Success
+      }
+      break;
+      
+    case MODBUS_FUNC_WRITE_SINGLE_REGISTER:
+      if (length >= 12) {
+        *startAddress = (request[8] << 8) | request[9];
+        *count = 1;  // Single register
+        return 0;  // Success
+      }
+      break;
+      
+    case MODBUS_FUNC_WRITE_MULTIPLE_REGISTERS:
+      if (length >= 13) {
+        *startAddress = (request[8] << 8) | request[9];
+        *count = (request[10] << 8) | request[11];
+        return 0;  // Success
+      }
+      break;
   }
   
-  DEBUG_PRINTLN("==============================\n");
+  return -2;  // Insufficient data for function
+}
+
+// === REGISTER ACCESS FUNCTIONS ===
+
+bool readHoldingRegisters(uint16_t startAddress, uint16_t count, uint16_t* values) {
+  if (!isValidRegisterRange(startAddress, count) || !values) {
+    return false;
+  }
+  
+  for (int i = 0; i < count; i++) {
+    values[i] = holdingRegisters[startAddress + i];
+  }
+  
+  return true;
+}
+
+bool writeSingleRegister(uint16_t address, uint16_t value) {
+  if (!isValidRegisterAddress(address)) {
+    return false;
+  }
+  
+  holdingRegisters[address] = value;
+  return true;
+}
+
+bool writeMultipleRegisters(uint16_t startAddress, uint16_t count, uint16_t* values) {
+  if (!isValidRegisterRange(startAddress, count) || !values) {
+    return false;
+  }
+  
+  for (int i = 0; i < count; i++) {
+    holdingRegisters[startAddress + i] = values[i];
+  }
+  
+  return true;
 }

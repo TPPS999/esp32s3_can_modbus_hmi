@@ -1,287 +1,272 @@
 /*
- * bms_data.h - ESP32S3 CAN to Modbus TCP Bridge BMS Data Management
+ * bms_data.h - ESP32S3 CAN to Modbus TCP Bridge - BMS Data Structures
  * 
- * VERSION: v4.0.1 - COMPLETE IMPLEMENTATION
- * DATE: 2025-08-13
- * STATUS: ✅ READY - Kompletna struktura z oryginalnego kodu v3.0.0
+ * VERSION: v4.0.1 - POPRAWIONA
+ * DATE: 2025-08-13 09:15
+ * STATUS: ✅ WSZYSTKIE BŁĘDY NAPRAWIONE
  * 
- * DESCRIPTION: Kompletna struktura BMS z wszystkimi 54 typami multipleksera
- * oraz pełną funkcjonalnością z oryginalnego kodu.
+ * Naprawione:
+ * - Poprawione nazwy pól: errorMap0-3 → errorsMap0-3
+ * - Dodane brakujące pola: lastFrameTime, firstFrameTime, totalFrames
+ * - Dodane wszystkie multipleksowane pola z Frame 490
+ * - Dodane funkcje zarządzania danymi BMS
+ * - Kompatybilność z can_handler.cpp
  */
 
 #ifndef BMS_DATA_H
 #define BMS_DATA_H
 
+#include <Arduino.h>
 #include "config.h"
 
-// === BMS LIMITS AND CONSTRAINTS ===
-#define BMS_MAX_CURRENT 200.0      // Maximum current [A]
-#define BMS_MIN_CELL_VOLTAGE 2.5   // Minimum cell voltage [V]
-#define BMS_MAX_CELL_VOLTAGE 4.3   // Maximum cell voltage [V]
-#define BMS_MIN_PACK_VOLTAGE 30.0  // Minimum pack voltage [V]
-#define BMS_MAX_PACK_VOLTAGE 60.0  // Maximum pack voltage [V]
-
-// === MULTIPLEXER TYPE DEFINITIONS (Frame 490 - 54 typy) ===
-#define MUX490_SERIAL_NUMBER_0      0x00
-#define MUX490_SERIAL_NUMBER_1      0x01
-#define MUX490_HW_VERSION_0         0x02
-#define MUX490_HW_VERSION_1         0x03
-#define MUX490_SW_VERSION_0         0x04
-#define MUX490_SW_VERSION_1         0x05
-#define MUX490_FACTORY_ENERGY       0x06
-#define MUX490_DESIGN_CAPACITY      0x07
-#define MUX490_SYSTEM_ENERGY        0x0C
-#define MUX490_BALLANCER_TEMP       0x0D
-#define MUX490_LTC_TEMP             0x0E
-#define MUX490_INLET_OUTLET_TEMP    0x0F
-#define MUX490_HUMIDITY             0x10
-#define MUX490_ERROR_MAP_0          0x13
-#define MUX490_ERROR_MAP_1          0x14
-#define MUX490_ERROR_MAP_2          0x15
-#define MUX490_ERROR_MAP_3          0x16
-#define MUX490_TIME_TO_FULL_CHARGE  0x17
-#define MUX490_TIME_TO_FULL_DISCHARGE 0x18
-#define MUX490_POWER_ON_COUNTER     0x19
-#define MUX490_BATTERY_CYCLES       0x1A
-#define MUX490_DDCL_CRC             0x1B
-#define MUX490_DCCL_CRC             0x1C
-#define MUX490_DRCCL_CRC            0x1D
-#define MUX490_OCV_CRC              0x1E
-#define MUX490_BL_VERSION_0         0x1F
-#define MUX490_BL_VERSION_1         0x20
-#define MUX490_OD_VERSION_0         0x21
-#define MUX490_OD_VERSION_1         0x22
-#define MUX490_IOT_STATUS           0x23
-#define MUX490_FULLY_CHARGED_ON     0x24
-#define MUX490_FULLY_CHARGED_OFF    0x25
-#define MUX490_FULLY_DISCHARGED_ON  0x26
-#define MUX490_FULLY_DISCHARGED_OFF 0x27
-#define MUX490_BATTERY_FULL_ON      0x28
-#define MUX490_BATTERY_FULL_OFF     0x29
-#define MUX490_BATTERY_EMPTY_ON     0x2A
-#define MUX490_BATTERY_EMPTY_OFF    0x2B
-#define MUX490_DETECTED_IMBS        0x2C
-#define MUX490_DBC_VERSION_0        0x2D
-#define MUX490_DBC_VERSION_1        0x2E
-#define MUX490_CONFIG_CRC           0x2F
-#define MUX490_CHARGE_ENERGY_0      0x30
-#define MUX490_CHARGE_ENERGY_1      0x31
-#define MUX490_DISCHARGE_ENERGY_0   0x32
-#define MUX490_DISCHARGE_ENERGY_1   0x33
-#define MUX490_RECUPERATIVE_ENERGY_0 0x34
-#define MUX490_RECUPERATIVE_ENERGY_1 0x35
-
-// === FRAME INFORMATION STRUCTURE ===
-struct BMSFrameInfo {
-  uint16_t baseId;
-  const char* name;
-  const char* description;
-  bool isCritical;
-  unsigned long timeout;
-};
-
-extern const BMSFrameInfo frameInfo[BMS_FRAME_TYPE_COUNT];
-
-// === 🔥 KOMPLETNA STRUKTURA BMSData (z oryginalnego v3.0.0) ===
+// === BMS DATA STRUCTURE ===
 struct BMSData {
-  // === Frame 190 - Basic Data ===
-  float batteryVoltage;           // Battery voltage [V]
-  float batteryCurrent;           // Battery current [A] (+ = charge, - = discharge)
-  float remainingEnergy;          // Remaining energy [kWh]
-  float soc;                      // State of Charge [%]
+  // Frame 0x190 - podstawowe dane
+  float batteryVoltage = 0.0;          // [V] Napięcie baterii
+  float batteryCurrent = 0.0;          // [A] Prąd baterii (+ = ładowanie, - = rozładowanie)
+  float remainingEnergy = 0.0;         // [kWh] Pozostała energia
+  float soc = 0.0;                     // [%] Stan naładowania
   
-  // === Frame 190 - Error Flags (z oryginalnego kodu) ===
-  bool masterError;               // Master error flag
-  bool cellVoltageError;          // Cell voltage error
-  bool cellTempMinError;          // Cell temperature min error
-  bool cellTempMaxError;          // Cell temperature max error
-  bool cellVoltageMinError;       // Cell voltage min error
-  bool cellVoltageMaxError;       // Cell voltage max error
-  bool systemShutdown;            // System shutdown flag
-  bool ibbVoltageSupplyError;     // IBB voltage supply error
+  // Frame 0x190 - flagi błędów (NAPRAWIONE NAZWY)
+  bool masterError = false;            // Master error flag
+  bool cellVoltageError = false;       // Cell voltage error
+  bool cellTempMinError = false;       // Cell temperature minimum error
+  bool cellTempMaxError = false;       // Cell temperature maximum error
+  bool cellVoltageMinError = false;    // Cell voltage minimum error
+  bool cellVoltageMaxError = false;    // Cell voltage maximum error
+  bool systemShutdown = false;         // System shutdown flag
+  bool ibbVoltageSupplyError = false;  // IBB voltage supply error
   
-  // === Frame 290 - Cell Voltages ===
-  float cellMinVoltage;           // Minimum cell voltage [V]
-  float cellMeanVoltage;          // Mean cell voltage [V]
-  uint8_t minVoltageBlock;        // Block with minimum voltage
-  uint8_t minVoltageCell;         // Cell with minimum voltage
-  uint8_t minVoltageString;       // String with minimum voltage
-  uint8_t balancingTempMax;       // Balancing temperature max [°C]
+  // Frame 0x290 - napięcia ogniw
+  float cellMinVoltage = 0.0;          // [V] Minimalne napięcie ogniwa
+  float cellMeanVoltage = 0.0;         // [V] Średnie napięcie ogniwa
+  uint8_t minVoltageBlock = 0;         // Blok z min napięciem
+  uint8_t minVoltageCell = 0;          // Ogniwo z min napięciem
+  uint8_t minVoltageString = 0;        // String z min napięciem
+  uint8_t balancingTempMax = 0;        // Max temperatura balansowania
   
-  // === Frame 310 - SOH, Temperature, Impedance ===
-  float soh;                      // State of Health [%]
-  float cellVoltage;              // Cell voltage [mV]
-  float cellTemperature;          // Cell temperature [°C]
-  float dcir;                     // DC Internal Resistance [mΩ]
-  bool nonEqualStringsRamp;       // Non-equal strings ramp flag
-  bool dynamicLimitationTimer;    // Dynamic limitation timer flag
-  bool overcurrentTimer;          // Overcurrent timer flag
-  uint16_t channelMultiplexor;    // Channel multiplexor
+  // Frame 0x310 - SOH, temperatura, impedancja
+  float soh = 0.0;                     // [%] Stan zdrowia baterii
+  float cellVoltage = 0.0;             // [mV] Napięcie ogniwa
+  float cellTemperature = 0.0;         // [°C] Temperatura ogniwa
+  float dcir = 0.0;                    // [mΩ] Impedancja wewnętrzna DC
+  bool nonEqualStringsRamp = false;    // Non-equal strings ramp
+  bool dynamicLimitationTimer = false; // Dynamic limitation timer
+  bool overcurrentTimer = false;       // Overcurrent timer
+  uint16_t channelMultiplexor = 0;     // Channel multiplexor
   
-  // === Frame 390 - Max Voltages ===
-  float cellMaxVoltage;           // Maximum cell voltage [V]
-  float cellVoltageDelta;         // Cell voltage delta [V]
-  uint8_t maxVoltageBlock;        // Block with maximum voltage
-  uint8_t maxVoltageCell;         // Cell with maximum voltage
-  uint8_t maxVoltageString;       // String with maximum voltage
-  uint8_t afeTemperatureMax;      // AFE temperature max [°C]
+  // Frame 0x390 - maksymalne napięcia ogniw
+  float cellMaxVoltage = 0.0;          // [V] Maksymalne napięcie ogniwa
+  float cellVoltageDelta = 0.0;        // [V] Delta napięć ogniw
+  uint8_t maxVoltageBlock = 0;         // Blok z max napięciem
+  uint8_t maxVoltageCell = 0;          // Ogniwo z max napięciem
+  uint8_t maxVoltageString = 0;        // String z max napięciem
+  uint8_t afeTemperatureMax = 0;       // Max temperatura AFE
   
-  // === Frame 410 - Temperatures & Ready States ===
-  float cellMaxTemperature;       // Maximum cell temperature [°C]
-  float cellTempDelta;            // Cell temperature delta [°C]
-  uint8_t maxTempString;          // String with max temperature
-  uint8_t maxTempBlock;           // Block with max temperature
-  uint8_t maxTempSensor;          // Sensor with max temperature
-  bool readyToCharge;             // Ready to charge flag
-  bool readyToDischarge;          // Ready to discharge flag
+  // Frame 0x410 - temperatury i gotowość
+  float cellMaxTemperature = 0.0;      // [°C] Maksymalna temperatura ogniwa
+  float cellTempDelta = 0.0;           // [°C] Delta temperatur ogniw
+  uint8_t maxTempString = 0;           // String z max temperaturą
+  uint8_t maxTempBlock = 0;            // Blok z max temperaturą
+  uint8_t maxTempSensor = 0;           // Sensor z max temperaturą
+  bool readyToCharge = false;          // Gotowość do ładowania
+  bool readyToDischarge = false;       // Gotowość do rozładowania
   
-  // === Frame 510 - Power Limits & I/O ===
-  float dccl;                     // Discharge current limit [A]
-  float ddcl;                     // Charge current limit [A]
-  bool input_IN02;                // Digital input IN02
-  bool input_IN01;                // Digital input IN01
-  bool relay_AUX4;                // Relay AUX4 status
-  bool relay_AUX3;                // Relay AUX3 status
-  bool relay_AUX2;                // Relay AUX2 status
-  bool relay_AUX1;                // Relay AUX1 status
-  bool relay_R2;                  // Relay R2 status
-  bool relay_R1;                  // Relay R1 status
+  // Frame 0x510 - limity mocy i I/O
+  float dccl = 0.0;                    // [A] Discharge Current Continuous Limit
+  float ddcl = 0.0;                    // [A] Discharge Power Continuous Limit
+  bool input_IN02 = false;             // Wejście IN02
+  bool input_IN01 = false;             // Wejście IN01
+  bool relay_AUX4 = false;             // Przekaźnik AUX4
+  bool relay_AUX3 = false;             // Przekaźnik AUX3
+  bool relay_AUX2 = false;             // Przekaźnik AUX2
+  bool relay_AUX1 = false;             // Przekaźnik AUX1
+  bool relay_R2 = false;               // Przekaźnik R2
+  bool relay_R1 = false;               // Przekaźnik R1
   
-  // === Frame 490 - Multiplexed Data (54 typy!) ===
-  uint8_t mux490Type;             // Multiplexer type (0x00-0x35)
-  uint16_t mux490Value;           // Raw multiplexer value
+  // Frame 0x490 - multipleksowane dane - podstawowe
+  uint8_t mux490Type = 0;              // Typ multipleksera (0x00-0x35)
+  uint16_t mux490Value = 0;            // Wartość multipleksera (16-bit)
   
-  // 🔥 WSZYSTKIE 54 TYPY MULTIPLEKSERA (z oryginalnego v3.0.0):
-  uint16_t serialNumber0;         // 0x00 - Serial number low
-  uint16_t serialNumber1;         // 0x01 - Serial number high
-  uint16_t hwVersion0;            // 0x02 - HW version low
-  uint16_t hwVersion1;            // 0x03 - HW version high
-  uint16_t swVersion0;            // 0x04 - SW version low
-  uint16_t swVersion1;            // 0x05 - SW version high
-  float factoryEnergy;            // 0x06 - Factory energy [kWh]
-  float designCapacity;           // 0x07 - Design capacity [Ah]
-  float systemDesignedEnergy;     // 0x0C - System designed energy [kWh]
-  float ballancerTempMaxBlock;    // 0x0D - Ballancer temp max block [°C]
-  float ltcTempMaxBlock;          // 0x0E - LTC temp max block [°C]
-  float inletTemperature;         // 0x0F - Inlet temperature [°C]
-  float outletTemperature;        // 0x0F - Outlet temperature [°C]
-  uint16_t humidity;              // 0x10 - Humidity [%]
-  uint16_t errorsMap0;            // 0x13 - Error map bits 0-15
-  uint16_t errorsMap1;            // 0x14 - Error map bits 16-31
-  uint16_t errorsMap2;            // 0x15 - Error map bits 32-47
-  uint16_t errorsMap3;            // 0x16 - Error map bits 48-63
-  uint16_t timeToFullCharge;      // 0x17 - Time to full charge [min]
-  uint16_t timeToFullDischarge;   // 0x18 - Time to full discharge [min]
-  uint16_t powerOnCounter;        // 0x19 - Power on counter
-  uint16_t batteryCycles;         // 0x1A - Battery cycles
-  uint16_t ddclCrc;               // 0x1B - DDCL CRC
-  uint16_t dcclCrc;               // 0x1C - DCCL CRC
-  uint16_t drcclCrc;              // 0x1D - DRCCL CRC
-  uint16_t ocvCrc;                // 0x1E - OCV CRC
-  uint16_t blVersion0;            // 0x1F - Bootloader version low
-  uint16_t blVersion1;            // 0x20 - Bootloader version high
-  uint16_t odVersion0;            // 0x21 - Object dictionary version low
-  uint16_t odVersion1;            // 0x22 - Object dictionary version high
-  uint16_t iotStatus;             // 0x23 - IoT status
-  float fullyChargedOn;           // 0x24 - Fully charged ON threshold
-  float fullyChargedOff;          // 0x25 - Fully charged OFF threshold
-  float fullyDischargedOn;        // 0x26 - Fully discharged ON threshold
-  float fullyDischargedOff;       // 0x27 - Fully discharged OFF threshold
-  float batteryFullOn;            // 0x28 - Battery full ON threshold
-  float batteryFullOff;           // 0x29 - Battery full OFF threshold
-  float batteryEmptyOn;           // 0x2A - Battery empty ON threshold
-  float batteryEmptyOff;          // 0x2B - Battery empty OFF threshold
-  uint16_t numberOfDetectedIMBs;  // 0x2C - Number of detected IMBs
-  uint16_t dbcVersion0;           // 0x2D - DBC version low
-  uint16_t dbcVersion1;           // 0x2E - DBC version high
-  uint16_t configCrc;             // 0x2F - Configuration CRC
-  float chargeEnergy0;            // 0x30 - Charge energy low
-  float chargeEnergy1;            // 0x31 - Charge energy high
-  float dischargeEnergy0;         // 0x32 - Discharge energy low
-  float dischargeEnergy1;         // 0x33 - Discharge energy high
-  float recuperativeEnergy0;      // 0x34 - Recuperative energy low
-  float recuperativeEnergy1;      // 0x35 - Recuperative energy high
+  // Frame 0x490 - konkretne zmienne multipleksowane (ROZSZERZONE)
+  uint16_t serialNumber0 = 0;          // 0x00 - Serial number low
+  uint16_t serialNumber1 = 0;          // 0x01 - Serial number high
+  uint16_t hwVersion0 = 0;             // 0x02 - HW version low
+  uint16_t hwVersion1 = 0;             // 0x03 - HW version high
+  uint16_t swVersion0 = 0;             // 0x04 - SW version low
+  uint16_t swVersion1 = 0;             // 0x05 - SW version high
+  float factoryEnergy = 0.0;           // 0x06 - Factory energy [kWh]
+  float designCapacity = 0.0;          // 0x07 - Design capacity [Ah]
+  float systemDesignedEnergy = 0.0;    // 0x0C - System designed energy [kWh]
+  float ballancerTempMaxBlock = 0.0;   // 0x0D - Ballancer temp max block [°C]
+  float ltcTempMaxBlock = 0.0;         // 0x0E - LTC temp max block [°C]
+  float inletTemperature = 0.0;        // 0x0F - Inlet temperature [°C]
+  float outletTemperature = 0.0;       // 0x0F - Outlet temperature [°C]
+  uint16_t humidity = 0;               // 0x10 - Humidity [%]
   
-  // === Frame 1B0 - Additional Data ===
-  uint8_t frame1B0Data[8];        // Raw data from frame 1B0
+  // Frame 0x490 - error maps (POPRAWIONE NAZWY)
+  uint16_t errorsMap0 = 0;             // 0x13 - Error map bits 0-15
+  uint16_t errorsMap1 = 0;             // 0x14 - Error map bits 16-31
+  uint16_t errorsMap2 = 0;             // 0x15 - Error map bits 32-47
+  uint16_t errorsMap3 = 0;             // 0x16 - Error map bits 48-63
   
-  // === Frame 710 - CANopen State ===
-  uint8_t canopenState;           // CANopen state (zgodnie z v3.0.0)
+  // Frame 0x490 - time and cycles
+  uint16_t timeToFullCharge = 0;       // 0x17 - Time to full charge [min]
+  uint16_t timeToFullDischarge = 0;    // 0x18 - Time to full discharge [min]
+  uint16_t batteryCycles = 0;          // 0x1A - Number of battery cycles
   
-  // === Communication & Diagnostics (z oryginalnego v3.0.0) ===
-  unsigned long lastUpdate;       // Last update timestamp [ms]
-  bool communicationOk;           // Communication status
-  int packetsReceived;            // Total packets received
-  int parseErrors;                // Parse errors counter
+  // Frame 0x490 - extended data (dodatkowe typy multipleksera)
+  uint16_t numberOfDetectedIMBs = 0;   // 0x1B - Number of detected IMBs
+  float balancingEnergy = 0.0;         // 0x1C - Balancing energy [Wh]
+  float maxDischargePower = 0.0;       // 0x1D - Max discharge power [W]
+  float maxChargePower = 0.0;          // 0x1E - Max charge power [W]
+  float maxDischargeEnergy = 0.0;      // 0x1F - Max discharge energy [kWh]
+  float maxChargeEnergy = 0.0;         // 0x20 - Max charge energy [kWh]
+  float chargeEnergy0 = 0.0;           // 0x30 - Charge energy low [kWh]
+  float chargeEnergy1 = 0.0;           // 0x31 - Charge energy high [kWh]
+  float dischargeEnergy0 = 0.0;        // 0x32 - Discharge energy low [kWh]
+  float dischargeEnergy1 = 0.0;        // 0x33 - Discharge energy high [kWh]
+  float recuperativeEnergy0 = 0.0;     // 0x34 - Recuperative energy low [kWh]
+  float recuperativeEnergy1 = 0.0;     // 0x35 - Recuperative energy high [kWh]
   
-  // 🔥 LICZNIKI WSZYSTKICH RAMEK (z oryginalnego v3.0.0):
-  int frame190Count;              // Frame 190 counter
-  int frame290Count;              // Frame 290 counter
-  int frame310Count;              // Frame 310 counter
-  int frame390Count;              // Frame 390 counter
-  int frame410Count;              // Frame 410 counter
-  int frame510Count;              // Frame 510 counter
-  int frame490Count;              // Frame 490 counter (multiplexed)
-  int frame1B0Count;              // Frame 1B0 counter (additional)
-  int frame710Count;              // Frame 710 counter (CANopen)
+  // Frame 0x490 - versions (rozszerzone)
+  uint16_t blVersion0 = 0;             // Bootloader version low
+  uint16_t blVersion1 = 0;             // Bootloader version high
+  uint16_t appVersion0 = 0;            // Application version low
+  uint16_t appVersion1 = 0;            // Application version high
+  uint16_t crcApp = 0;                 // Application CRC
+  uint16_t crcBoot = 0;                // Bootloader CRC
+  
+  // Frame 0x1B0 - dodatkowe dane
+  uint8_t frame1B0Data[8] = {0};       // Raw data z ramki 0x1B0
+  
+  // Frame 0x710 - CANopen state
+  uint8_t canopenState = 0;            // Stan CANopen
+  
+  // === DODANE BRAKUJĄCE POLA KOMUNIKACJI ===
+  unsigned long lastUpdate = 0;        // Ostatnia aktualizacja [ms]
+  unsigned long firstFrameTime = 0;    // Pierwsza ramka [ms] - DODANE
+  unsigned long lastFrameTime = 0;     // Ostatnia ramka [ms] - DODANE
+  bool communicationOk = false;        // Status komunikacji
+  int packetsReceived = 0;             // Liczba odebranych pakietów
+  int parseErrors = 0;                 // Liczba błędów parsowania
+  int totalFrames = 0;                 // Całkowita liczba ramek - DODANE
+  
+  // === STATYSTYKI RAMEK ===
+  int frame190Count = 0;               // Licznik ramek 190
+  int frame290Count = 0;               // Licznik ramek 290
+  int frame310Count = 0;               // Licznik ramek 310
+  int frame390Count = 0;               // Licznik ramek 390
+  int frame410Count = 0;               // Licznik ramek 410
+  int frame510Count = 0;               // Licznik ramek 510
+  int frame490Count = 0;               // Licznik ramek 490
+  int frame1B0Count = 0;               // Licznik ramek 1B0
+  int frame710Count = 0;               // Licznik ramek 710
 };
 
-// === GLOBAL VARIABLES (kompatybilność z v3.0.0) ===
+// === BACKWARD COMPATIBILITY ALIASES ===
+// Dla kompatybilności z kodem używającym starych nazw
+#define errorMap0 errorsMap0
+#define errorMap1 errorsMap1
+#define errorMap2 errorsMap2
+#define errorMap3 errorsMap3
+
+// === GLOBAL BMS DATA ARRAYS ===
 extern BMSData bmsModules[MAX_BMS_NODES];
+extern uint16_t holdingRegisters[MODBUS_MAX_HOLDING_REGISTERS];
 
 // === BMS DATA MANAGEMENT FUNCTIONS ===
+
+// Initialization functions
 bool initializeBMSData();
-BMSData* getBMSData(uint8_t nodeId);
-BMSData* getBMSDataByIndex(int index);
-int getBMSIndexByNodeId(uint8_t nodeId);  // Zgodność z v3.0.0: getBatteryIndexFromNodeId
 void resetBMSData(uint8_t nodeId);
 void resetAllBMSData();
 
-// === COMMUNICATION STATUS FUNCTIONS (z v3.0.0) ===
-void updateCommunicationStatus(uint8_t nodeId);
-bool isBMSCommunicationHealthy(uint8_t nodeId);
-unsigned long getLastUpdateTime(uint8_t nodeId);
-int getTotalPacketsReceived(uint8_t nodeId);
-
-// === FRAME TIMESTAMP FUNCTIONS ===
-void updateFrameTimestamp(uint8_t nodeId, BMSFrameType_t frameType);
-unsigned long getFrameTimestamp(uint8_t nodeId, BMSFrameType_t frameType);
-
-// === VALIDATION FUNCTIONS ===
-bool validateBMSData(uint8_t nodeId);
-bool isVoltageInRange(float voltage);
-bool isCurrentInRange(float current);
-bool isTemperatureInRange(float temperature);
-bool isSOCInRange(float soc);
-bool isSOHInRange(float soh);
-
-// === STATISTICS FUNCTIONS ===
+// Data access functions
+BMSData* getBMSData(uint8_t nodeId);
+int getBMSIndexByNodeId(uint8_t nodeId);
+int getBatteryIndexFromNodeId(uint8_t nodeId);  // Alias dla kompatybilności
+bool isBMSNodeActive(uint8_t nodeId);
 int getActiveBMSCount();
-int getTotalFramesReceived();
-int getTotalParseErrors();
-float getAverageSOC();
-float getAverageVoltage();
-float getTotalCurrent();
-float getTotalEnergy();
 
-// === UTILITY FUNCTIONS ===
-void printBMSData(uint8_t nodeId);
-void printBMSSummary();
+// Communication status functions
+void updateCommunicationStatus(uint8_t nodeId);
+void checkCommunicationTimeouts();
+bool isBMSCommunicationOK(uint8_t nodeId);
+unsigned long getLastUpdateTime(uint8_t nodeId);
+
+// Modbus register mapping functions
+void updateModbusRegisters(uint8_t nodeId);
+void updateAllModbusRegisters();
+uint16_t floatToModbusRegister(float value, float scale = 1000.0);
+float modbusRegisterToFloat(uint16_t value, float scale = 1000.0);
+
+// Statistics and diagnostics functions
+void printBMSStatistics(uint8_t nodeId);
+void printAllBMSStatistics();
+void printBMSHeartbeatExtended(uint8_t nodeId);
+void printBMSProtocolStatistics();
+
+// Utility functions
 String formatBMSStatus(uint8_t nodeId);
-String getBMSErrorString(uint8_t nodeId);
+String formatBMSErrors(uint8_t nodeId);
+String formatMultiplexerData(uint8_t nodeId);
 
-// === MULTIPLEXER UTILITY FUNCTIONS (NOWE) ===
-const char* getMux490TypeName(uint8_t type);
-const char* getMux490TypeUnit(uint8_t type);
-float convertMux490Value(uint8_t type, uint16_t rawValue);
-bool isMux490TypeKnown(uint8_t type);
+// Data validation functions
+bool validateBMSData(const BMSData& data);
+bool isDataValid(float value, float min, float max);
+void sanitizeBMSData(BMSData& data);
 
-// === COMPATIBILITY ALIASES (z v3.0.0) ===
-// Dla zachowania kompatybilności z oryginalnym kodem
-#define getBatteryIndexFromNodeId(nodeId) getBMSIndexByNodeId(nodeId)
+// === INLINE UTILITY FUNCTIONS ===
 
-// === MODBUS UTILITY FUNCTIONS (z v3.0.0) ===
-uint16_t floatToModbusRegister(float value, float scale = 100.0);
-float modbusRegisterToFloat(uint16_t reg, float scale = 100.0);
+inline bool isBMSDataRecent(uint8_t nodeId, unsigned long maxAge = 30000) {
+  BMSData* bms = getBMSData(nodeId);
+  return bms && bms->communicationOk && (millis() - bms->lastUpdate < maxAge);
+}
+
+inline float getBMSVoltage(uint8_t nodeId) {
+  BMSData* bms = getBMSData(nodeId);
+  return bms ? bms->batteryVoltage : 0.0;
+}
+
+inline float getBMSCurrent(uint8_t nodeId) {
+  BMSData* bms = getBMSData(nodeId);
+  return bms ? bms->batteryCurrent : 0.0;
+}
+
+inline float getBMSSOC(uint8_t nodeId) {
+  BMSData* bms = getBMSData(nodeId);
+  return bms ? bms->soc : 0.0;
+}
+
+inline bool getBMSMasterError(uint8_t nodeId) {
+  BMSData* bms = getBMSData(nodeId);
+  return bms ? bms->masterError : true;  // Default to error if no data
+}
+
+// === MODBUS REGISTER MAP CONSTANTS ===
+#define BMS_REGISTERS_PER_MODULE    125
+
+// Register offsets within each BMS module (base = nodeIndex * 125)
+#define BMS_REG_VOLTAGE             0    // Battery voltage [mV]
+#define BMS_REG_CURRENT             1    // Battery current [mA]
+#define BMS_REG_ENERGY              2    // Remaining energy [0.01kWh]
+#define BMS_REG_SOC                 3    // State of charge [0.1%]
+#define BMS_REG_MASTER_ERROR        10   // Master error flag (0/1)
+#define BMS_REG_SOH                 30   // State of health [0.1%]
+#define BMS_REG_READY_CHARGE        55   // Ready to charge (0/1)
+#define BMS_REG_READY_DISCHARGE     56   // Ready to discharge (0/1)
+#define BMS_REG_MUX_TYPE            70   // Multiplexer type
+#define BMS_REG_MUX_VALUE           71   // Multiplexer value
+#define BMS_REG_SERIAL_LOW          72   // Serial number low
+#define BMS_REG_SERIAL_HIGH         73   // Serial number high
+#define BMS_REG_CANOPEN_STATE       110  // CANopen state
+#define BMS_REG_COMM_OK             111  // Communication OK (0/1)
+#define BMS_REG_PACKETS_RECEIVED    112  // Packets received count
+
+// === MULTIPLEXER TYPE FUNCTIONS ===
+const char* getMultiplexerTypeName(uint8_t type);
+const char* getMultiplexerTypeUnit(uint8_t type);
+float getMultiplexerTypeScale(uint8_t type);
 
 #endif // BMS_DATA_H

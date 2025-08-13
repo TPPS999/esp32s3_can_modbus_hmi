@@ -1,37 +1,33 @@
 /*
  * main.cpp - ESP32S3 CAN to Modbus TCP Bridge - Complete Implementation
  * 
- * VERSION: v4.0.1 - COMPLETE WITH ALL v3.0.0 FUNCTIONALITY
- * DATE: 2025-08-13
- * STATUS: ✅ READY - Wykorzystuje wszystkie nowe funkcje z uzupełnionych modułów
+ * VERSION: v4.0.2 - USUNIĘTO CAN_HANDLER
+ * DATE: 2025-08-13 09:17
+ * STATUS: ✅ READY - can_handler.h/.cpp USUNIĘTE - funkcje w bms_protocol.h
  * 
- * DESCRIPTION: Główny plik aplikacji z pełną funkcjonalnością z v3.0.0
- * - Wszystkie 9 parserów ramek CAN + 54 typy multipleksera
- * - Kompletne mapowanie 125 rejestrów Modbus per BMS
- * - Rozszerzony heartbeat z danymi multipleksera
- * - Zaawansowane statystyki i diagnostyka
- * - Modularny design v4.0.0 + funkcjonalność v3.0.0
+ * DESCRIPTION: Główny plik aplikacji z pełną funkcjonalnością
  * 
- * MODULES USED:
- * - config.h/cpp          - System configuration and EEPROM
- * - wifi_manager.h/cpp    - WiFi connection management
- * - can_handler.h/cpp     - CAN communication and parsing
- * - modbus_tcp.h/cpp      - Modbus TCP server implementation
- * - bms_data.h            - BMS data structures and management (ROZSZERZONA)
- * - bms_protocol.h/cpp    - BMS protocol parsing (KOMPLETNA)
- * - utils.h/cpp           - Utility functions and diagnostics
+ * MODULES USED (POPRAWIONE):
+ * - config.h/cpp          ✅ System configuration and EEPROM
+ * - wifi_manager.h/cpp    ✅ WiFi connection management
+ * - modbus_tcp.h/cpp      ✅ Modbus TCP server implementation
+ * - bms_data.h            ✅ BMS data structures and management (ROZSZERZONA)
+ * - bms_protocol.h/cpp    ✅ BMS protocol parsing + CAN handling (KOMPLETNA)
+ * - utils.h/cpp           ✅ Utility functions and diagnostics
+ * 
+ * REMOVED:
+ * - can_handler.h/cpp     ❌ USUNIĘTE - duplikat funkcji z bms_protocol.h
  */
 
 // === CORE INCLUDES ===
 #include <Arduino.h>
 
-// === PROJECT MODULES ===
+// === PROJECT MODULES (POPRAWIONE - bez can_handler) ===
 #include "config.h"
 #include "wifi_manager.h"
-#include "can_handler.h"
 #include "modbus_tcp.h"
 #include "bms_data.h"
-#include "bms_protocol.h"  // 🔥 NOWY: Kompletny protokół BMS
+#include "bms_protocol.h"  // 🔥 ZAWIERA: setupCAN, processCAN, isCANHealthy + parsery
 #include "utils.h"
 
 // === SYSTEM STATE VARIABLES ===
@@ -41,7 +37,7 @@ unsigned long lastHeartbeat = 0;
 unsigned long lastDiagnostics = 0;
 unsigned long lastStatusCheck = 0;
 
-// === 🔥 HEARTBEAT AND MONITORING (rozszerzone z v3.0.0) ===
+// === 🔥 HEARTBEAT AND MONITORING ===
 #define HEARTBEAT_INTERVAL_MS 60000        // 1 minute
 #define DIAGNOSTICS_INTERVAL_MS 300000     // 5 minutes  
 #define STATUS_CHECK_INTERVAL_MS 10000     // 10 seconds
@@ -66,7 +62,7 @@ void onWiFiStateChange(WiFiState_t oldState, WiFiState_t newState);
 void onWiFiConnected(String ip);
 void onWiFiDisconnected();
 
-// === 🔥 MAIN SETUP FUNCTION (rozszerzony) ===
+// === 🔥 MAIN SETUP FUNCTION ===
 void setup() {
   systemStartTime = millis();
   
@@ -108,7 +104,7 @@ void setup() {
   Serial.println(String('=', 60) + "\n");
 }
 
-// === 🔥 MAIN LOOP FUNCTION (zoptymalizowany) ===
+// === 🔥 MAIN LOOP FUNCTION ===
 void loop() {
   unsigned long now = millis();
   
@@ -123,7 +119,7 @@ void loop() {
     handleSystemState();
   }
   
-  // 🔥 ROZSZERZONY HEARTBEAT z danymi multipleksera (z v3.0.0)
+  // 🔥 ROZSZERZONY HEARTBEAT z danymi multipleksera
   if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
     lastHeartbeat = now;
     handleSystemHeartbeat();
@@ -143,7 +139,7 @@ void loop() {
 
 void initializeSystem() {
   Serial.println("🔧 Initializing ESP32S3 CAN to Modbus TCP Bridge...");
-  Serial.println("📋 System Architecture: Modular v4.0.1 with v3.0.0 Functionality");
+  Serial.println("📋 System Architecture: Modular v4.0.2 (can_handler removed)");
   Serial.println();
   
   currentSystemState = SYSTEM_STATE_INITIALIZING;
@@ -158,7 +154,7 @@ void initializeSystem() {
     Serial.println("⚠️ Using default configuration");
   }
   
-  // 🔥 Initialize BMS data structures (rozszerzone z v3.0.0)
+  // 🔥 Initialize BMS data structures
   for (int i = 0; i < MAX_BMS_NODES; i++) {
     memset(&bmsModules[i], 0, sizeof(BMSData));
     bmsModules[i].communicationOk = false;
@@ -199,9 +195,9 @@ bool initializeModules() {
     success = false;
   }
   
-  // 3. Initialize CAN Handler
-  Serial.print("🚌 CAN Handler... ");
-  if (setupCAN()) {
+  // 3. Initialize BMS Protocol (zawiera CAN handling)
+  Serial.print("🚌 BMS Protocol + CAN... ");
+  if (setupBMSProtocol()) {  // 🔥 ZMIANA: setupCAN() → setupBMSProtocol()
     Serial.println("✅ OK");
     Serial.printf("   🎯 Monitoring %d BMS nodes at 125 kbps\n", systemConfig.activeBmsNodes);
     Serial.printf("   🔋 Node IDs: ");
@@ -230,11 +226,11 @@ bool initializeModules() {
   return success;
 }
 
-// === 🔥 MAIN PROCESSING LOOP (zoptymalizowany z v3.0.0) ===
+// === 🔥 MAIN PROCESSING LOOP ===
 
 void processSystemLoop() {
-  // PRIORITY 1: Process CAN messages (highest priority - real-time data)
-  processCAN();
+  // PRIORITY 1: Process CAN messages via BMS Protocol (highest priority - real-time data)
+  processBMSProtocol();  // 🔥 ZMIANA: processCAN() → processBMSProtocol()
   
   // PRIORITY 2: Process WiFi management  
   wifiManager.process();
@@ -246,12 +242,12 @@ void processSystemLoop() {
   checkCommunicationTimeouts();
 }
 
-// === 🔥 SYSTEM HEALTH AND MONITORING (rozszerzone) ===
+// === 🔥 SYSTEM HEALTH AND MONITORING ===
 
 void checkSystemHealth() {
   // Check individual module health
   bool wifiHealthy = wifiManager.isConnected() || wifiManager.isAPModeActive();
-  bool canHealthy = isCANHealthy();
+  bool canHealthy = isBMSProtocolHealthy();  // 🔥 ZMIANA: isCANHealthy() → isBMSProtocolHealthy()
   bool modbusHealthy = isModbusServerActive();
   bool bmsHealthy = getActiveBMSCount() > 0;
   
@@ -268,7 +264,7 @@ void checkSystemHealth() {
       
       // Log specific issues
       if (!wifiHealthy) Serial.println("   ❌ WiFi connection issues");
-      if (!canHealthy) Serial.println("   ❌ CAN communication issues");
+      if (!canHealthy) Serial.println("   ❌ BMS Protocol/CAN communication issues");
       if (!modbusHealthy) Serial.println("   ❌ Modbus TCP server issues");
       if (!bmsHealthy) Serial.println("   ❌ No active BMS communication");
     }
@@ -320,17 +316,17 @@ void performSystemDiagnostics() {
                 WiFi.localIP().toString().c_str(), MODBUS_TCP_PORT);
   Serial.printf("   State: %s\n", getModbusState() == MODBUS_STATE_RUNNING ? "Running" : "Error");
   
-  // 🔥 PROTOKÓŁ BMS STATISTICS (NOWE z v3.0.0)
+  // 🔥 BMS PROTOCOL STATISTICS (zamiast CAN statistics)
   printBMSProtocolStatistics();
   
-  // 🔥 MODBUS STATISTICS (NOWE z v3.0.0)  
+  // 🔥 MODBUS STATISTICS
   printModbusStatistics();
   
   Serial.println(F("=================================="));
   Serial.println();
 }
 
-// === 🔥 ROZSZERZONY HEARTBEAT Z MULTIPLEXEREM (z v3.0.0) ===
+// === 🔥 ROZSZERZONY HEARTBEAT Z MULTIPLEXEREM ===
 
 void handleSystemHeartbeat() {
   unsigned long now = millis();
@@ -354,13 +350,13 @@ void handleSystemHeartbeat() {
   if (activeBMSCount > 0) {
     Serial.println("🔋 ACTIVE BATTERIES STATUS:");
     
-    // 🔥 EXTENDED HEARTBEAT dla każdej baterii (z v3.0.0)
+    // 🔥 EXTENDED HEARTBEAT dla każdej baterii
     for (int i = 0; i < systemConfig.activeBmsNodes; i++) {
       uint8_t nodeId = systemConfig.bmsNodeIds[i];
       BMSData* bms = getBMSData(nodeId);
       
       if (bms && bms->communicationOk) {
-        printBMSHeartbeatExtended(nodeId);  // 🔥 NOWA FUNKCJA z kompletnego Modbus
+        printBMSHeartbeatExtended(nodeId);  // 🔥 Funkcja z bms_data.h
       } else {
         int batteryIndex = getBMSIndexByNodeId(nodeId);
         uint16_t baseAddr = batteryIndex * 125;
@@ -403,21 +399,23 @@ void printStartupBanner() {
   Serial.println();
   Serial.println(String('=', 60));
   Serial.println("🚀 ESP32S3 CAN to Modbus TCP Bridge");
-  Serial.println("📋 Version: v4.0.1 - Complete Implementation"); 
+  Serial.println("📋 Version: v4.0.2 - CAN Handler Removed"); 
   Serial.println("📅 Build Date: " BUILD_DATE);
   Serial.println("🏭 Device: " DEVICE_NAME);
-  Serial.println("🏗️ Architecture: Modular + Complete v3.0.0 Functionality");
+  Serial.println("🏗️ Architecture: Modular (5 modules)");
   Serial.println(String('=', 60));
   Serial.println();
   
   Serial.println("📦 Module Overview:");
   Serial.println("   🔧 config.h/cpp         - System configuration");
   Serial.println("   📡 wifi_manager.h/cpp   - WiFi management");
-  Serial.println("   🚌 can_handler.h/cpp    - CAN communication");
   Serial.println("   🔗 modbus_tcp.h/cpp     - Modbus TCP server");
-  Serial.println("   📊 bms_data.h           - 🔥 BMS data (ROZSZERZONA 80+ pól)");
-  Serial.println("   🛠️ bms_protocol.h/cpp   - 🔥 BMS protocol (KOMPLETNA 9 parserów)");
+  Serial.println("   📊 bms_data.h           - 🔥 BMS data (80+ pól)");
+  Serial.println("   🛠️ bms_protocol.h/cpp   - 🔥 CAN + BMS protocol (9 parserów + 54 mux)");
   Serial.println("   🛠️ utils.h/cpp          - Utility functions");
+  Serial.println();
+  Serial.println("❌ REMOVED MODULES:");
+  Serial.println("   🚫 can_handler.h/cpp    - Duplikat (funkcje w bms_protocol)");
   Serial.println();
   
   Serial.println("🎯 System Capabilities:");
@@ -429,15 +427,6 @@ void printStartupBanner() {
   Serial.printf("   📡 WiFi + AP fallback mode\n");
   Serial.printf("   🔗 Modbus TCP Server (port %d)\n", MODBUS_TCP_PORT);
   Serial.println();
-  
-  Serial.println("🔥 NEW FEATURES from v3.0.0:");
-  Serial.println("   📊 Complete 125 registers per BMS mapping");
-  Serial.println("   🔄 All 54 multiplexer types (Frame 490)");
-  Serial.println("   📈 Extended heartbeat with multiplexer data");
-  Serial.println("   🔍 Advanced diagnostics & frame statistics");
-  Serial.println("   📋 Error maps, versions, CRC validation");
-  Serial.println("   🚀 Enhanced communication monitoring");
-  Serial.println();
 }
 
 void printSystemStatus() {
@@ -446,7 +435,7 @@ void printSystemStatus() {
   Serial.printf("⏰ Boot Time: %lu ms\n", millis() - systemStartTime);
   Serial.printf("💾 Free Heap: %s\n", formatBytes(ESP.getFreeHeap()).c_str());
   Serial.printf("📶 WiFi Status: %s\n", wifiManager.isConnected() ? "Connected" : "Disconnected");
-  Serial.printf("🚌 CAN Status: %s\n", isCANHealthy() ? "Healthy" : "Error");
+  Serial.printf("🚌 BMS Protocol: %s\n", isBMSProtocolHealthy() ? "Healthy" : "Error");
   Serial.printf("🔗 Modbus Status: %s\n", isModbusServerActive() ? "Running" : "Error");
   Serial.printf("🔋 Active BMS: %d/%d\n", getActiveBMSCount(), systemConfig.activeBmsNodes);
 }

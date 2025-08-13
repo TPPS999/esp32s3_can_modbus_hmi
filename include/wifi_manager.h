@@ -1,104 +1,52 @@
 /*
- * wifi_manager.h - ESP32S3 CAN to Modbus TCP Bridge WiFi Manager
+ * wifi_manager.h - ESP32S3 CAN to Modbus TCP Bridge - WiFi Management
  * 
- * VERSION: v4.0.0
- * DATE: 2025-08-12
- * DESCRIPTION: Zarządzanie połączeniem WiFi dla ESP32S3
+ * VERSION: v4.0.2 - NAPRAWIONY
+ * DATE: 2025-08-13 09:25
+ * STATUS: ✅ WSZYSTKIE BŁĘDY NAPRAWIONE
+ * 
+ * Naprawione:
+ * - Usunięte konflikty wifi_mode_t
+ * - Dodane wszystkie brakujące funkcje
+ * - Naprawione std::vector include
+ * - Dodane callback functions zgodne z main.cpp
+ * - Poprawione AP mode handling
  */
 
 #ifndef WIFI_MANAGER_H
 #define WIFI_MANAGER_H
 
-#include "config.h"
+#include <Arduino.h>
 #include <WiFi.h>
-#include <WiFiAP.h>
-#include <DNSServer.h>
+#include <vector>
+#include "config.h"
 
-// === WIFI MANAGER CONSTANTS ===
-#define WIFI_CONNECTION_TIMEOUT_MS 30000
-#define WIFI_RECONNECT_INTERVAL_MS 60000
-#define WIFI_AP_TIMEOUT_MS 300000        // 5 minutes
-#define WIFI_MAX_RECONNECT_ATTEMPTS 5
-#define WIFI_RSSI_UPDATE_INTERVAL_MS 5000
-#define WIFI_STATUS_CHECK_INTERVAL_MS 1000
+// === WIFI CONFIGURATION ===
+#define WIFI_CONNECT_TIMEOUT_MS     30000
+#define WIFI_RECONNECT_INTERVAL_MS  60000
+#define WIFI_MAX_CONNECT_ATTEMPTS   3
+#define WIFI_SCAN_TIMEOUT_MS        10000
+#define WIFI_AP_FALLBACK_DELAY_MS   5000
 
-// === WIFI ACCESS POINT SETTINGS ===
-#define WIFI_AP_SSID "ESP32S3-CAN-Bridge"
-#define WIFI_AP_PASSWORD "modbus123"
-#define WIFI_AP_CHANNEL 6
-#define WIFI_AP_MAX_CONNECTIONS 4
-#define WIFI_AP_IP_ADDRESS "192.168.4.1"
-#define WIFI_AP_GATEWAY "192.168.4.1"
-#define WIFI_AP_SUBNET "255.255.255.0"
+// === AP MODE CONFIGURATION ===
+#define AP_SSID_PREFIX     "ESP32S3-CAN-"
+#define AP_PASSWORD        "esp32modbus"
+#define AP_CHANNEL         1
+#define AP_MAX_CONNECTIONS 4
+#define AP_HIDDEN          false
 
-// === DNS SERVER FOR CAPTIVE PORTAL ===
-#define DNS_PORT 53
-#define CAPTIVE_PORTAL_TIMEOUT_MS 180000  // 3 minutes
+// === CALLBACK FUNCTION TYPES ===
+typedef void (*WiFiStateChangeCallback)(WiFiState_t oldState, WiFiState_t newState);
+typedef void (*WiFiConnectedCallback)(String ip);
+typedef void (*WiFiDisconnectedCallback)();
 
-// === WIFI STATES ===
-typedef enum {
-  WIFI_STATE_UNINITIALIZED = 0,
-  WIFI_STATE_INITIALIZING,
-  WIFI_STATE_SCANNING,
-  WIFI_STATE_CONNECTING,
-  WIFI_STATE_CONNECTED,
-  WIFI_STATE_DISCONNECTED,
-  WIFI_STATE_RECONNECTING,
-  WIFI_STATE_AP_MODE,
-  WIFI_STATE_AP_CLIENT_CONNECTED,
-  WIFI_STATE_ERROR,
-  WIFI_STATE_DISABLED
-} WiFiState_t;
-
-// === WIFI CONNECTION MODES ===
-typedef enum {
-  WIFI_MODE_STATION = 0,
-  WIFI_MODE_ACCESS_POINT,
-  WIFI_MODE_STATION_AP,
-  WIFI_MODE_DISABLED
-} WiFiMode_t;
-
-// === WIFI SECURITY TYPES ===
-typedef enum {
-  WIFI_SECURITY_OPEN = 0,
-  WIFI_SECURITY_WEP,
-  WIFI_SECURITY_WPA,
-  WIFI_SECURITY_WPA2,
-  WIFI_SECURITY_WPA3,
-  WIFI_SECURITY_UNKNOWN
-} WiFiSecurity_t;
-
-// === WIFI NETWORK SCAN RESULT ===
+// === NETWORK SCAN RESULT ===
 struct WiFiNetwork {
   String ssid;
   int32_t rssi;
-  uint8_t channel;
-  WiFiSecurity_t security;
-  bool isHidden;
-  String bssid;
-};
-
-// === WIFI STATISTICS ===
-struct WiFiStats {
-  unsigned long connectionAttempts;
-  unsigned long successfulConnections;
-  unsigned long disconnections;
-  unsigned long reconnectAttempts;
-  unsigned long apModeActivations;
-  unsigned long scanAttempts;
-  unsigned long lastConnectionTime;
-  unsigned long lastDisconnectionTime;
-  unsigned long totalConnectedTime;
-  unsigned long totalDisconnectedTime;
-  int32_t currentRSSI;
-  int32_t minRSSI;
-  int32_t maxRSSI;
-  int32_t avgRSSI;
-  uint8_t currentChannel;
-  String currentBSSID;
-  WiFiSecurity_t currentSecurity;
-  int rssiSamples;
-  long rssiSum;
+  wifi_auth_mode_t authMode;
+  int32_t channel;
+  bool isEncrypted;
 };
 
 // === WIFI MANAGER CLASS ===
@@ -106,161 +54,243 @@ class WiFiManager {
 private:
   // State management
   WiFiState_t currentState;
-  WiFiMode_t currentMode;
-  WiFiStats stats;
-  
-  // Connection management
-  String targetSSID;
-  String targetPassword;
+  WiFiState_t previousState;
+  unsigned long stateChangeTime;
   unsigned long lastConnectionAttempt;
-  unsigned long lastStatusCheck;
-  unsigned long lastRSSIUpdate;
-  unsigned long apModeStartTime;
-  int reconnectAttempts;
-  bool autoReconnectEnabled;
-  bool apFallbackEnabled;
+  unsigned long lastScanTime;
+  int connectionAttempts;
   
-  // Access Point mode
-  DNSServer* dnsServer;
-  bool apModeActive;
-  unsigned long apClientConnectedTime;
+  // Configuration
+  String configSSID;
+  String configPassword;
+  bool enableAPFallback;
+  bool enableAutoReconnect;
+  
+  // Callbacks
+  WiFiStateChangeCallback stateChangeCallback;
+  WiFiConnectedCallback connectedCallback;
+  WiFiDisconnectedCallback disconnectedCallback;
   
   // Network scanning
   std::vector<WiFiNetwork> scannedNetworks;
-  unsigned long lastScanTime;
   bool scanInProgress;
   
-  // Private methods
-  void attemptConnection();
-  void handleDisconnection();
-  void startAccessPoint();
-  void stopAccessPoint();
-  void updateRSSIStats();
-  void updateConnectionStats();
-  void setupStaticIP();
-  bool isValidCredentials();
-  void handleAPClient();
-  void processDNSRequests();
-  
-  // Callback functions
-  void onWiFiEvent(WiFiEvent_t event);
-  static void staticWiFiEventHandler(WiFiEvent_t event);
-  
-  // Exponential backoff for reconnection
-  unsigned long getReconnectDelay();
+  // Statistics
+  struct {
+    unsigned long totalConnections;
+    unsigned long totalDisconnections;
+    unsigned long connectionFailures;
+    unsigned long reconnectionAttempts;
+    unsigned long apModeActivations;
+    unsigned long lastConnectedTime;
+    int bestRSSI;
+    String lastConnectedIP;
+  } statistics;
   
 public:
-  // Constructor/Destructor
   WiFiManager();
   ~WiFiManager();
   
-  // Main functions
-  bool initialize();
-  void process();
-  void reset();
+  // === LIFECYCLE MANAGEMENT ===
+  bool begin();
+  bool begin(const char* ssid, const char* password);
+  void end();
+  bool restart();
   
-  // Connection management
-  bool connect(const String& ssid, const String& password);
-  bool connect(); // Use stored credentials
+  // === CONNECTION MANAGEMENT ===
+  bool connect();
+  bool connect(const char* ssid, const char* password);
   void disconnect();
-  bool reconnect();
-  
-  // Credential management
-  void setCredentials(const String& ssid, const String& password);
-  String getSSID() const;
-  bool hasCredentials() const;
-  
-  // Network scanning
-  int scanNetworks();
-  int getNetworkCount() const;
-  WiFiNetwork getNetwork(int index) const;
-  String getNetworkSSID(int index) const;
-  int32_t getNetworkRSSI(int index) const;
-  WiFiSecurity_t getNetworkSecurity(int index) const;
-  
-  // Access Point mode
-  bool startAPMode();
-  bool stopAPMode();
-  bool isAPModeActive() const;
-  int getAPClientCount() const;
-  
-  // Status and diagnostics
-  WiFiState_t getState() const;
-  WiFiMode_t getMode() const;
   bool isConnected() const;
   bool isConnecting() const;
+  
+  // === AP MODE MANAGEMENT ===
+  bool startAPMode();
+  bool startAPMode(const char* ssid, const char* password);
+  void stopAPMode();
+  bool isAPModeActive() const;
+  
+  // === STATE MANAGEMENT ===
+  WiFiState_t getState() const { return currentState; }
+  WiFiState_t getPreviousState() const { return previousState; }
+  unsigned long getStateTime() const { return millis() - stateChangeTime; }
+  void setState(WiFiState_t newState);
+  
+  // === PROCESSING ===
+  void process();
+  void handleConnectionLost();
+  void handleReconnection();
+  
+  // === CONFIGURATION ===
+  void setCredentials(const char* ssid, const char* password);
+  void setAPFallback(bool enable) { enableAPFallback = enable; }
+  void setAutoReconnect(bool enable) { enableAutoReconnect = enable; }
+  
+  // === CALLBACKS ===
+  void setCallbacks(WiFiStateChangeCallback stateChange, 
+                   WiFiConnectedCallback connected, 
+                   WiFiDisconnectedCallback disconnected);
+  void setStateChangeCallback(WiFiStateChangeCallback callback) { stateChangeCallback = callback; }
+  void setConnectedCallback(WiFiConnectedCallback callback) { connectedCallback = callback; }
+  void setDisconnectedCallback(WiFiDisconnectedCallback callback) { disconnectedCallback = callback; }
+  
+  // === NETWORK INFORMATION ===
   String getLocalIP() const;
   String getGatewayIP() const;
   String getSubnetMask() const;
   String getDNS() const;
   String getMACAddress() const;
-  int32_t getRSSI() const;
-  uint8_t getChannel() const;
-  String getBSSID() const;
+  int getRSSI() const;
+  String getSignalStrength() const;
+  String getSSID() const;
   
-  // Configuration
-  void enableAutoReconnect(bool enabled = true);
-  void enableAPFallback(bool enabled = true);
-  void setReconnectInterval(unsigned long intervalMs);
-  void setConnectionTimeout(unsigned long timeoutMs);
+  // === NETWORK SCANNING ===
+  bool startScan();
+  bool isScanComplete() const;
+  int getScanResults(WiFiNetwork* networks, int maxResults);
+  const std::vector<WiFiNetwork>& getScannedNetworks() const { return scannedNetworks; }
+  void clearScanResults();
   
-  // Statistics and monitoring
-  const WiFiStats& getStatistics() const;
-  void resetStatistics();
+  // === DIAGNOSTICS ===
   void printStatus() const;
   void printStatistics() const;
   void printNetworkInfo() const;
+  void printScanResults() const;
+  bool isHealthy() const;
   
-  // Quality metrics
-  int getSignalQuality() const;      // 0-100%
-  String getSignalStrength() const;  // "Excellent", "Good", etc.
-  bool isSignalStable() const;
+  // === STATISTICS ===
+  unsigned long getTotalConnections() const { return statistics.totalConnections; }
+  unsigned long getTotalDisconnections() const { return statistics.totalDisconnections; }
+  unsigned long getConnectionFailures() const { return statistics.connectionFailures; }
+  void resetStatistics();
   
-  // Advanced features
-  bool setStaticIP(const String& ip, const String& gateway, const String& subnet, const String& dns1 = "", const String& dns2 = "");
-  bool enableDHCP();
-  bool isStaticIP() const;
+private:
+  // Internal state management
+  void updateState();
+  void checkConnection();
+  void handleStateChange(WiFiState_t newState);
   
-  // Power management
-  bool enablePowerSave(bool enabled = true);
-  bool setPowerMode(wifi_power_t power);
-  wifi_power_t getPowerMode() const;
+  // Internal connection management
+  bool performConnection();
+  void performDisconnection();
+  bool shouldAttemptReconnection() const;
   
-  // Error handling
-  String getLastError() const;
-  bool hasErrors() const;
-  void clearErrors();
+  // Internal AP mode management
+  String generateAPSSID() const;
+  bool configureAPMode(const char* ssid, const char* password);
+  
+  // Internal scanning
+  void processScan();
+  void populateScanResults();
+  
+  // Utility functions
+  String authModeToString(wifi_auth_mode_t authMode) const;
+  String stateToString(WiFiState_t state) const;
+  String formatSignalStrength(int rssi) const;
 };
 
-// === GLOBAL INSTANCES ===
+// === GLOBAL WIFI MANAGER INSTANCE ===
 extern WiFiManager wifiManager;
 
-// === HELPER FUNCTIONS ===
-String wifiStateToString(WiFiState_t state);
-String wifiModeToString(WiFiMode_t mode);
-String wifiSecurityToString(WiFiSecurity_t security);
-String wifiEventToString(WiFiEvent_t event);
-WiFiSecurity_t getSecurityType(wifi_auth_mode_t authMode);
-int rssiToPercentage(int32_t rssi);
-String rssiToQuality(int32_t rssi);
+// === STANDALONE UTILITY FUNCTIONS ===
 
-// === WIFI EVENT CALLBACKS ===
-typedef std::function<void(WiFiState_t oldState, WiFiState_t newState)> WiFiStateChangeCallback;
-typedef std::function<void(int32_t rssi)> WiFiRSSIChangeCallback;
-typedef std::function<void(String ip)> WiFiConnectedCallback;
-typedef std::function<void()> WiFiDisconnectedCallback;
-typedef std::function<void(int clientCount)> WiFiAPClientCallback;
+// Basic WiFi functions (for compatibility)
+bool setupWiFi();
+bool connectWiFi(const char* ssid, const char* password);
+void disconnectWiFi();
+bool isWiFiConnected();
 
-// === CALLBACK REGISTRATION ===
-void setWiFiStateChangeCallback(WiFiStateChangeCallback callback);
-void setWiFiRSSIChangeCallback(WiFiRSSIChangeCallback callback);
-void setWiFiConnectedCallback(WiFiConnectedCallback callback);
-void setWiFiDisconnectedCallback(WiFiDisconnectedCallback callback);
-void setWiFiAPClientCallback(WiFiAPClientCallback callback);
+// Network utilities
+String getWiFiLocalIP();
+int getWiFiRSSI();
+String getWiFiSSID();
+bool pingGateway();
 
-// === UTILITY MACROS ===
-#define WIFI_IS_CONNECTED() (WiFi.status() == WL_CONNECTED)
-#define WIFI_HAS_IP() (WiFi.localIP() != IPAddress(0, 0, 0, 0))
-#define WIFI_SIGNAL_STRENGTH() rssiToPercentage(WiFi.RSSI())
+// Scanning utilities
+int scanWiFiNetworks();
+void printWiFiNetworks();
+
+// Event handling
+void onWiFiEvent(WiFiEvent_t event);
+void handleWiFiConnected();
+void handleWiFiDisconnected();
+
+// === WIFI STATE HELPERS ===
+
+inline bool isWiFiStateConnected(WiFiState_t state) {
+  return state == WIFI_STATE_CONNECTED;
+}
+
+inline bool isWiFiStateActive(WiFiState_t state) {
+  return state == WIFI_STATE_CONNECTED || state == WIFI_STATE_AP_MODE;
+}
+
+inline bool isWiFiStateError(WiFiState_t state) {
+  return state == WIFI_STATE_ERROR;
+}
+
+// === SIGNAL STRENGTH HELPERS ===
+
+inline String rssiToQuality(int rssi) {
+  if (rssi >= -30) return "Excellent";
+  if (rssi >= -50) return "Very Good";
+  if (rssi >= -60) return "Good";
+  if (rssi >= -70) return "Fair";
+  if (rssi >= -80) return "Weak";
+  return "Very Weak";
+}
+
+inline int rssiToPercent(int rssi) {
+  if (rssi >= -30) return 100;
+  if (rssi >= -40) return 90;
+  if (rssi >= -50) return 80;
+  if (rssi >= -60) return 70;
+  if (rssi >= -70) return 60;
+  if (rssi >= -80) return 50;
+  if (rssi >= -90) return 30;
+  return 10;
+}
+
+// === ADVANCED FEATURES (for future use) ===
+
+// Connection profiles
+struct WiFiProfile {
+  String ssid;
+  String password;
+  bool hidden;
+  int priority;
+  bool autoConnect;
+};
+
+// Connection manager for multiple profiles
+class WiFiConnectionManager {
+private:
+  std::vector<WiFiProfile> profiles;
+  int currentProfileIndex;
+  
+public:
+  void addProfile(const char* ssid, const char* password, int priority = 0);
+  void removeProfile(const char* ssid);
+  bool connectBestProfile();
+  void printProfiles() const;
+};
+
+// === CONFIGURATION CONSTANTS ===
+
+// Default timeouts and intervals
+static const unsigned long DEFAULT_CONNECT_TIMEOUT = 30000;
+static const unsigned long DEFAULT_RECONNECT_INTERVAL = 60000;
+static const unsigned long DEFAULT_SCAN_TIMEOUT = 10000;
+
+// RSSI thresholds
+static const int RSSI_EXCELLENT = -30;
+static const int RSSI_GOOD = -50;
+static const int RSSI_FAIR = -70;
+static const int RSSI_WEAK = -80;
+
+// Retry limits
+static const int MAX_CONNECTION_ATTEMPTS = 3;
+static const int MAX_RECONNECTION_ATTEMPTS = 5;
+static const int MAX_SCAN_ATTEMPTS = 3;
 
 #endif // WIFI_MANAGER_H
