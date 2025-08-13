@@ -106,24 +106,60 @@ struct BMSData {
   // === Frame 490 - Multiplexed Data ===
   uint8_t mux490Type;             // Multiplexer type
   uint16_t mux490Value;           // Multiplexer value
-  uint16_t serialNumberLow;       // Serial number low part
-  uint16_t serialNumberHigh;      // Serial number high part
-  uint16_t hwVersionLow;          // Hardware version low
-  uint16_t hwVersionHigh;         // Hardware version high
-  uint16_t swVersionLow;          // Software version low
-  uint16_t swVersionHigh;         // Software version high
-  float factoryEnergy;            // Factory energy [kWh]
-  float designCapacity;           // Design capacity [Ah]
-  float inletTemperature;         // Inlet temperature [°C]
-  float outletTemperature;        // Outlet temperature [°C]
-  uint16_t humidity;              // Humidity [%]
-  uint16_t errorMap1Low;          // Error map 1 low
-  uint16_t errorMap1High;         // Error map 1 high
-  uint16_t errorMap2Low;          // Error map 2 low
-  uint16_t errorMap2High;         // Error map 2 high
-  uint16_t timeToFullCharge;      // Time to full charge [min]
-  uint16_t timeToFullDischarge;   // Time to full discharge [min]
-  uint16_t batteryCycles;         // Battery cycles count
+  
+  // Konkretne zmienne z multipleksowanych danych 0x490 (54 typy)
+  uint16_t serialNumber0;         // 0x00 - Serial number low
+  uint16_t serialNumber1;         // 0x01 - Serial number high
+  uint16_t hwVersion0;            // 0x02 - HW version low
+  uint16_t hwVersion1;            // 0x03 - HW version high
+  uint16_t swVersion0;            // 0x04 - SW version low
+  uint16_t swVersion1;            // 0x05 - SW version high
+  float factoryEnergy;            // 0x06 - Factory energy [kWh]
+  float designCapacity;           // 0x07 - Design capacity [Ah]
+  float systemDesignedEnergy;     // 0x0C - System designed energy [kWh]
+  float ballancerTempMaxBlock;    // 0x0D - Ballancer temp max block [°C]
+  float ltcTempMaxBlock;          // 0x0E - LTC temp max block [°C]
+  float inletTemperature;         // 0x0F - Inlet temperature [°C]
+  float outletTemperature;        // 0x0F - Outlet temperature [°C]
+  uint16_t humidity;              // 0x10 - Humidity [%]
+  uint16_t errorsMap0;            // 0x13 - Error map bits 0-15
+  uint16_t errorsMap1;            // 0x14 - Error map bits 16-31
+  uint16_t errorsMap2;            // 0x15 - Error map bits 32-47
+  uint16_t errorsMap3;            // 0x16 - Error map bits 48-63
+  uint16_t timeToFullCharge;      // 0x17 - Time to full charge [min]
+  uint16_t timeToFullDischarge;   // 0x18 - Time to full discharge [min]
+  uint16_t powerOnCounter;        // 0x19 - Power on counter
+  uint16_t batteryCycles;         // 0x1A - Battery cycles
+  uint16_t ddclCrc;               // 0x1B - DDCL CRC
+  uint16_t dcclCrc;               // 0x1C - DCCL CRC
+  uint16_t drcclCrc;              // 0x1D - DRCCL CRC
+  uint16_t ocvCrc;                // 0x1E - OCV CRC
+  uint16_t blVersion0;            // 0x1F - Bootloader version low
+  uint16_t blVersion1;            // 0x20 - Bootloader version high
+  uint16_t odVersion0;            // 0x21 - Object dictionary version low
+  uint16_t odVersion1;            // 0x22 - Object dictionary version high
+  uint16_t iotStatus;             // 0x23 - IoT status
+  float fullyChargedOn;           // 0x24 - Fully charged ON threshold
+  float fullyChargedOff;          // 0x25 - Fully charged OFF threshold
+  float fullyDischargedOn;        // 0x26 - Fully discharged ON threshold
+  float fullyDischargedOff;       // 0x27 - Fully discharged OFF threshold
+  float batteryFullOn;            // 0x28 - Battery full ON threshold
+  float batteryFullOff;           // 0x29 - Battery full OFF threshold
+  float batteryEmptyOn;           // 0x2A - Battery empty ON threshold
+  float batteryEmptyOff;          // 0x2B - Battery empty OFF threshold
+  uint16_t numberOfDetectedIMBs;  // 0x2C - Number of detected IMBs
+  uint16_t dbcVersion0;           // 0x2D - DBC version low
+  uint16_t dbcVersion1;           // 0x2E - DBC version high
+  uint16_t configCrc;             // 0x2F - Configuration CRC
+  float chargeEnergy0;            // 0x30 - Charge energy low
+  float chargeEnergy1;            // 0x31 - Charge energy high
+  float dischargeEnergy0;         // 0x32 - Discharge energy low
+  float dischargeEnergy1;         // 0x33 - Discharge energy high
+  float recuperativeEnergy0;      // 0x34 - Recuperative energy low
+  float recuperativeEnergy1;      // 0x35 - Recuperative energy high
+  
+  // === Frame 1B0 - Additional Data ===
+  uint8_t frame1B0Data[8];        // Raw data z ramki 0x1B0
   
   // === Frame 710 - CANopen ===
   uint8_t canOpenState;           // CANopen state
