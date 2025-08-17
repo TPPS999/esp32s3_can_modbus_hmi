@@ -542,3 +542,137 @@ void WiFiManager::printScanResults() const {
   }
   Serial.println("===================================");
 }
+
+// === MISSING FUNCTION IMPLEMENTATIONS ===
+
+String WiFiManager::stateToString(WiFiState_t state) const {
+  switch (state) {
+    case WIFI_STATE_DISCONNECTED: return "Disconnected";
+    case WIFI_STATE_CONNECTING: return "Connecting";
+    case WIFI_STATE_CONNECTED: return "Connected";
+    case WIFI_STATE_AP_MODE: return "AP Mode";
+    case WIFI_STATE_ERROR: return "Error";
+    default: return "Unknown";
+  }
+}
+
+String WiFiManager::generateAPSSID() const {
+  String macSuffix = WiFi.macAddress();
+  macSuffix.replace(":", "");
+  macSuffix = macSuffix.substring(6); // Last 6 characters
+  return String(AP_SSID_PREFIX) + macSuffix;
+}
+
+String WiFiManager::authModeToString(wifi_auth_mode_t authMode) const {
+  switch (authMode) {
+    case WIFI_AUTH_OPEN: return "Open";
+    case WIFI_AUTH_WEP: return "WEP";
+    case WIFI_AUTH_WPA_PSK: return "WPA";
+    case WIFI_AUTH_WPA2_PSK: return "WPA2";
+    case WIFI_AUTH_WPA_WPA2_PSK: return "WPA/WPA2";
+    case WIFI_AUTH_WPA2_ENTERPRISE: return "WPA2-Enterprise";
+    case WIFI_AUTH_WPA3_PSK: return "WPA3";
+    case WIFI_AUTH_WPA2_WPA3_PSK: return "WPA2/WPA3";
+    default: return "Unknown";
+  }
+}
+
+// === GLOBAL UTILITY FUNCTIONS ===
+
+void handleWiFiConnected() {
+  Serial.printf("✅ WiFi connected to %s\n", WiFi.SSID().c_str());
+  Serial.printf("📡 IP Address: %s\n", WiFi.localIP().toString().c_str());
+  Serial.printf("📶 RSSI: %d dBm\n", WiFi.RSSI());
+  
+  wifiManager.setState(WIFI_STATE_CONNECTED);
+  
+  // Call callback if set - need to access via public method
+  // wifiManager will handle the callback internally
+}
+
+void handleWiFiDisconnected() {
+  Serial.println("❌ WiFi disconnected");
+  
+  wifiManager.setState(WIFI_STATE_DISCONNECTED);
+  
+  // Call callback if set - handled internally by wifiManager
+}
+
+// === MISSING PRIVATE FUNCTION IMPLEMENTATIONS ===
+
+void WiFiManager::updateState() {
+  // Update WiFi state based on current status
+  wl_status_t status = WiFi.status();
+  
+  switch (status) {
+    case WL_CONNECTED:
+      if (currentState != WIFI_STATE_CONNECTED) {
+        setState(WIFI_STATE_CONNECTED);
+      }
+      break;
+      
+    case WL_DISCONNECTED:
+      if (currentState != WIFI_STATE_DISCONNECTED) {
+        setState(WIFI_STATE_DISCONNECTED);
+      }
+      break;
+      
+    case WL_CONNECT_FAILED:
+    case WL_CONNECTION_LOST:
+      setState(WIFI_STATE_ERROR);
+      break;
+      
+    default:
+      if (currentState == WIFI_STATE_DISCONNECTED) {
+        setState(WIFI_STATE_CONNECTING);
+      }
+      break;
+  }
+}
+
+bool WiFiManager::shouldAttemptReconnection() const {
+  if (!enableAutoReconnect) return false;
+  if (currentState != WIFI_STATE_DISCONNECTED && currentState != WIFI_STATE_ERROR) return false;
+  if (connectionAttempts >= WIFI_MAX_CONNECT_ATTEMPTS) return false;
+  
+  unsigned long now = millis();
+  return (now - lastConnectionAttempt) >= WIFI_RECONNECT_INTERVAL_MS;
+}
+
+void WiFiManager::processScan() {
+  if (!scanInProgress) return;
+  
+  int networkCount = WiFi.scanComplete();
+  if (networkCount == WIFI_SCAN_RUNNING) {
+    return; // Still scanning
+  }
+  
+  scanInProgress = false;
+  
+  if (networkCount > 0) {
+    populateScanResults();
+    Serial.printf("📡 Scan complete: %d networks found\n", networkCount);
+  } else if (networkCount == 0) {
+    Serial.println("📡 No networks found");
+  } else {
+    Serial.println("📡 Scan failed");
+  }
+}
+
+void WiFiManager::populateScanResults() {
+  scannedNetworks.clear();
+  
+  int networkCount = WiFi.scanComplete();
+  for (int i = 0; i < networkCount; i++) {
+    WiFiNetwork network;
+    network.ssid = WiFi.SSID(i);
+    network.rssi = WiFi.RSSI(i);
+    network.authMode = WiFi.encryptionType(i);
+    network.channel = WiFi.channel(i);
+    network.isEncrypted = (network.authMode != WIFI_AUTH_OPEN);
+    
+    scannedNetworks.push_back(network);
+  }
+  
+  WiFi.scanDelete(); // Free memory
+}

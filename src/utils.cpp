@@ -247,17 +247,7 @@ float convertCelsiusToKelvin(float celsius) {
   return celsius + 273.15;
 }
 
-uint16_t floatToModbusRegister(float value, float multiplier) {
-  int32_t intValue = (int32_t)(value * multiplier);
-  // Clamp to 16-bit range
-  if (intValue > 65535) intValue = 65535;
-  if (intValue < 0) intValue = 0;
-  return (uint16_t)intValue;
-}
-
-float modbusRegisterToFloat(uint16_t reg, float divider) {
-  return (float)reg / divider;
-}
+// floatToModbusRegister and modbusRegisterToFloat moved to modbus_tcp.cpp to avoid duplicates
 
 // === DEBUG UTILITIES ===
 
@@ -270,24 +260,7 @@ void printHexDump(const uint8_t* data, size_t length, const char* prefix) {
   DEBUG_PRINT("]");
 }
 
-void printCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
-  DEBUG_PRINTF("🔍 CAN: ID=0x%03lX Len=%d Data=", canId, len);
-  printHexDump(buf, len, "");
-  
-  // Identyfikacja typu ramki
-  if ((canId & 0xFF80) == CAN_FRAME_190_BASE) DEBUG_PRINT(" (Basic data)");
-  else if ((canId & 0xFF80) == CAN_FRAME_290_BASE) DEBUG_PRINT(" (Cell voltages)");
-  else if ((canId & 0xFF80) == CAN_FRAME_310_BASE) DEBUG_PRINT(" (SOH/Temperature)");
-  else if ((canId & 0xFF80) == CAN_FRAME_390_BASE) DEBUG_PRINT(" (Max limits)");
-  else if ((canId & 0xFF80) == CAN_FRAME_410_BASE) DEBUG_PRINT(" (Temperatures)");
-  else if ((canId & 0xFF80) == CAN_FRAME_510_BASE) DEBUG_PRINT(" (Power limits)");
-  else if ((canId & 0xFF80) == CAN_FRAME_490_BASE) DEBUG_PRINT(" (Multiplexed)");
-  else if ((canId & 0xFF80) == CAN_FRAME_1B0_BASE) DEBUG_PRINT(" (Additional)");
-  else if ((canId & 0xFF80) == CAN_FRAME_710_BASE) DEBUG_PRINT(" (CANopen)");
-  else if (canId == AP_TRIGGER_CAN_ID) DEBUG_PRINT(" (AP TRIGGER!)");
-  
-  DEBUG_PRINTLN();
-}
+// printCANFrame moved to bms_protocol.cpp to avoid duplicates
 
 void printModbusFrame(const uint8_t* frame, size_t length, bool isRequest) {
   if (length < 8) return;
@@ -376,36 +349,7 @@ String getWiFiStatusString() {
   }
 }
 
-/**
- * @brief Zaawansowana diagnostyka systemu
- */
-void performSystemDiagnostics() {
-  DEBUG_PRINTLN("\n🔍 === SYSTEM DIAGNOSTICS ===");
-  
-  // Memory diagnostics
-  float memUsage = getMemoryUsagePercent();
-  DEBUG_PRINTF("💾 Memory Usage: %.1f%% (%s free)\n", 
-               memUsage, formatBytes(ESP.getFreeHeap()).c_str());
-  
-  if (isMemoryCritical()) {
-    DEBUG_PRINTLN("   ⚠️ CRITICAL: Memory usage too high!");
-  }
-  
-  // Network diagnostics
-  DEBUG_PRINTF("📡 WiFi Status: %s\n", getWiFiStatusString().c_str());
-  if (WiFi.isConnected()) {
-    DEBUG_PRINTF("   Signal: %d dBm (%s)\n", WiFi.RSSI(), formatRSSI(WiFi.RSSI()).c_str());
-  }
-  
-  // BMS diagnostics
-  int activeBMS = getActiveBMSCount();
-  DEBUG_PRINTF("🔋 Active BMS: %d/%d\n", activeBMS, systemConfig.activeBmsNodes);
-  
-  // System health
-  DEBUG_PRINTF("🏥 System Health: %s\n", isSystemHealthy() ? "HEALTHY" : "WARNING");
-  
-  DEBUG_PRINTLN("===============================\n");
-}
+// performSystemDiagnostics moved to main.cpp to avoid duplicates
 
 // === ADDITIONAL UTILITY FUNCTIONS ===
 
@@ -419,10 +363,10 @@ void printBootHeader() {
   printSystemInfo();
 }
 
-void printBootProgress(const String& step, bool success) {
+void printBootProgress(const char* step, bool success) {
   DEBUG_PRINTF("[%s] %s: %s\n", 
                getFormattedTime().c_str(),
-               step.c_str(), 
+               step, 
                success ? "✅ OK" : "❌ FAILED");
 }
 
