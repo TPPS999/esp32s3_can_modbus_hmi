@@ -15,6 +15,7 @@
 
 #include "wifi_manager.h"
 #include "utils.h"
+#include "web_server.h"
 
 // === GLOBAL WIFI MANAGER INSTANCE ===
 WiFiManager wifiManager;
@@ -28,7 +29,7 @@ WiFiManager::WiFiManager()
   , lastConnectionAttempt(0)
   , lastScanTime(0)
   , connectionAttempts(0)
-  , enableAPFallback(true)
+  , enableAPFallback(false)  // 🔥 DISABLED: AP mode only via CAN trigger
   , enableAutoReconnect(true)
   , stateChangeCallback(nullptr)
   , connectedCallback(nullptr)
@@ -107,15 +108,10 @@ bool WiFiManager::begin(const char* ssid, const char* password) {
     return true;
   } else {
     Serial.println("⚠️ WiFi Manager initialized but not connected");
+    Serial.println("📡 AP mode available only via CAN trigger (0xEF1)");
     
-    // Try AP mode fallback if enabled
-    if (enableAPFallback) {
-      Serial.println("🔄 Starting AP mode fallback...");
-      delay(WIFI_AP_FALLBACK_DELAY_MS);
-      return startAPMode();
-    }
-    
-    return false;
+    // No automatic AP mode fallback - only CAN-triggered AP mode allowed
+    return true; // Return true as WiFi manager is initialized, connection can be retried
   }
 }
 
@@ -327,10 +323,10 @@ void WiFiManager::handleReconnection() {
     } else {
       Serial.println("❌ WiFi reconnection failed");
       
-      // Try AP mode fallback if too many failures
-      if (enableAPFallback && connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
-        Serial.println("🔄 Starting AP mode fallback after reconnection failures");
-        startAPMode();
+      // No automatic AP mode fallback - only CAN-triggered AP mode allowed
+      if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
+        Serial.println("⚠️ Maximum reconnection attempts reached");
+        Serial.println("📡 AP mode available only via CAN trigger (0xEF1)");
       }
     }
   }
@@ -696,6 +692,14 @@ bool WiFiManager::startTriggeredAPMode() {
     Serial.printf("   Password: %s\n", AP_PASSWORD);
     Serial.printf("   IP: 192.168.4.1\n");
     Serial.printf("   Duration: %d seconds\n", AP_MODE_DURATION_MS / 1000);
+    
+    // 🔥 Start configuration web server
+    if (startConfigWebServer()) {
+      Serial.println("🌐 Configuration web server started");
+      Serial.printf("   URL: http://192.168.4.1/\n");
+    } else {
+      Serial.println("❌ Failed to start web server");
+    }
   } else {
     Serial.println("❌ Failed to start triggered AP mode");
   }
@@ -709,6 +713,13 @@ bool WiFiManager::startTriggeredAPMode() {
 void WiFiManager::stopTriggeredAPMode() {
   if (isAPModeActive()) {
     Serial.println("🛑 Stopping triggered AP mode...");
+    
+    // 🔥 Stop configuration web server first
+    if (isConfigWebServerRunning()) {
+      stopConfigWebServer();
+      Serial.println("🌐 Configuration web server stopped");
+    }
+    
     stopAPMode();
     
     // Próbuj ponownie połączyć się z WiFi

@@ -8,11 +8,14 @@ Ten projekt implementuje most między protokołami CAN Bus i Modbus TCP używaj�
 
 - **CAN Bus Interface**: Odczyt danych z urządzeń BMS przez protokół CAN
 - **Modbus TCP Server**: Serwer Modbus TCP na porcie 502 
-- **WiFi Connectivity**: Połączenie bezprzewodowe z automatycznym reconnect i fallback do trybu AP
+- **WiFi Connectivity**: Połączenie bezprzewodowe z automatycznym reconnect
 - **🔥 CAN-Triggered AP Mode**: Tryb AP wyzwalany przez specjalne ramki CAN (ID: 0xEF1)
+- **🌐 Web Configuration Interface**: Kompletny interfejs konfiguracyjny w trybie AP
+- **⚙️ CAN Speed Configuration**: Konfiguracja prędkości CAN (125/500 kbps)
+- **🔋 Dynamic BMS Setup**: Dynamiczna konfiguracja liczby i ID baterii
+- **📊 CAN Frame Monitoring**: Podgląd adresów ramek CAN dla każdego BMS
 - **Multi-BMS Support**: Obsługa do 16 modułów BMS jednocześnie
 - **Real-time Monitoring**: Monitoring w czasie rzeczywistym z diagnostyką systemu
-- **Web Interface**: Interfejs webowy do zarządzania i monitorowania
 
 ## 🔧 Specyfikacja Techniczna
 
@@ -21,11 +24,12 @@ Ten projekt implementuje most między protokołami CAN Bus i Modbus TCP używaj�
 - **CAN Controller**: MCP2515 + TJA1050 transceiver
 - **Częstotliwość**: 240 MHz CPU
 - **Pamięć**: 320KB RAM, 8MB Flash
-- **CAN Bus Speed**: 125 kbps
+- **CAN Bus Speed**: 500 kbps (domyślnie), 125 kbps (konfigurowalny)
 
 ### Wykorzystanie Zasobów
-- **RAM**: 17.6% (57,804 bytes z 327,680 bytes)
-- **Flash**: 27.9% (932,268 bytes z 3,342,336 bytes)
+- **RAM**: ~18% (z web serverem w trybie AP)
+- **Flash**: ~30% (including AsyncWebServer libraries)
+- **Kompilacja**: Bez problemów po naprawach
 
 ## 📦 Architektura Systemu
 
@@ -40,7 +44,7 @@ src/
 ├── bms_protocol.cpp      # Protokół BMS + obsługa CAN
 ├── bms_data.cpp          # Struktury danych BMS
 ├── utils.cpp             # Funkcje pomocnicze
-└── web_server.cpp        # Serwer WWW (opcjonalny)
+└── web_server.cpp        # Serwer WWW konfiguracyjny
 
 include/
 ├── config.h              # Definicje konfiguracyjne
@@ -430,7 +434,7 @@ System obsługuje następujące typy ramek CAN:
 - **0x510-0x51F**: Limity mocy
 - **0x490-0x49F**: Dane multipleksowane (54 typy)
 - **0x1B0-0x1BF**: Dane dodatkowe
-- **0x710-0x71F**: Protokół CANopen
+- **0x710-0x71F**: Protokół CANopen (adres = 0x701 + Node_ID - 1)
 
 ### Ramki Specjalne
 - **0xEF1**: 🔥 **CAN-Triggered AP Mode** - wyzwalacz trybu AP (dane: 0xFF 0xBB)
@@ -511,6 +515,75 @@ print("AP mode powinien być aktywny przez 30 sekund")
 - **Automatyzacja**: Możliwość integracji z systemami diagnostycznymi
 - **Elastyczność**: Timer resetuje się z każdym wyzwalaczem
 - **Kompatybilność**: Nie koliduje ze standardowymi ramkami BMS
+
+### 🌐 Web Configuration Interface
+
+Po aktywacji trybu AP dostępny jest kompletny interfejs konfiguracyjny:
+
+#### Dostęp do Interface:
+1. **Aktywuj AP mode**: Wyślij 3x ramkę `0xEF1` z danymi `0xFF 0xBB`
+2. **Połącz się z WiFi**: `ESP32S3-CAN-XXXXXX-TRIGGER` (hasło: `esp32modbus`)
+3. **Otwórz browser**: http://192.168.4.1/
+
+#### Dostępne Strony:
+
+**🏠 Strona Główna** (`/`)
+- Przegląd statusu systemu
+- Podstawowe informacje o konfiguracji
+- Szybki dostęp do wszystkich sekcji
+
+**📡 Konfiguracja WiFi** (`/wifi`)
+- Ustawienie SSID i hasła sieci WiFi
+- Informacje o aktualnym połączeniu
+- Zapisanie konfiguracji do EEPROM
+
+**🔧 Konfiguracja BMS** (`/bms`)
+- **Liczba aktywnych baterii**: 1-16 modułów
+- **Prędkość CAN**: 125 kbps lub 500 kbps (domyślnie)
+- **Przypisanie ID**: Unikalne Node ID (1-16) dla każdej baterii
+- **🔥 Podgląd adresów Frame 710**: Automatyczne wyliczanie adresów (0x701 + ID - 1)
+- **Modbus Layout**: Podgląd mapowania rejestrów (200 rejestrów na BMS)
+
+**📊 Monitor CAN** (`/can`)
+- **Konfiguracja CAN**: Podgląd aktualnej prędkości i liczby węzłów
+- **Mapowanie Adresów**: Tabela adresów ramek 190, 290, 710 dla każdego BMS
+- **Status węzłów**: Podgląd stanu komunikacji z każdym BMS
+- **Typy ramek**: Opis wszystkich monitorowanych ramek CAN
+
+**📈 Status Systemu** (`/status`)
+- Informacje o sprzęcie i firmware
+- Status sieci WiFi i Modbus TCP
+- Wykorzystanie pamięci i czas działania
+- Akcje systemowe (restart, export konfiguracji)
+
+#### Funkcje Web Interface:
+- **💾 Automatyczny zapis**: Wszystkie zmiany zapisywane do EEPROM
+- **📊 Real-time Preview**: Podgląd adresów ramek w czasie rzeczywistym
+- **🔄 Restart Integration**: Bezpieczny restart z web interface
+- **📁 Export konfiguracji**: Pobieranie konfiguracji jako JSON
+- **📱 Responsive Design**: Optymalizacja dla urządzeń mobilnych
+
+#### Przykład konfiguracji BMS przez Web Interface:
+```
+Konfiguracja przed:
+- Liczba baterii: 4
+- CAN Speed: 125 kbps
+- Node IDs: [1, 2, 3, 4]
+- Frame 710 adresy: [0x701, 0x702, 0x703, 0x704]
+
+Po zmianie przez web:
+- Liczba baterii: 8
+- CAN Speed: 500 kbps  
+- Node IDs: [1, 3, 5, 7, 9, 11, 13, 15]
+- Frame 710 adresy: [0x701, 0x703, 0x705, 0x707, 0x709, 0x70B, 0x70D, 0x70F]
+- Modbus registers: 0-199, 200-399, 400-599, 600-799, 800-999, 1000-1199, 1200-1399, 1400-1599
+```
+
+#### Bezpieczeństwo Web Interface:
+- **Czasowe ograniczenie**: Interface dostępny tylko przez 30 sekund
+- **Lokalna sieć**: AP dostępny tylko lokalnie
+- **Autoryzacja**: Hasło wymagane do połączenia z AP
+- **Automatyczne wyłączenie**: AP wyłącza się po timeout
 
 ## 📈 Monitoring i Diagnostyka
 

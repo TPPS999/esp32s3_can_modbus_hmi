@@ -119,7 +119,7 @@ void setDefaultConfiguration() {
   }
   
   // Domyślna konfiguracja CAN i Modbus
-  systemConfig.canSpeed = CAN_125KBPS;
+  systemConfig.canSpeed = CAN_500KBPS;  // Changed default to 500 kbps
   systemConfig.modbusPort = MODBUS_TCP_PORT;
   systemConfig.modbusSlaveId = MODBUS_SLAVE_ID;
   systemConfig.enableCanFiltering = true;
