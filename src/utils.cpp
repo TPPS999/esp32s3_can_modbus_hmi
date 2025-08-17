@@ -1,13 +1,95 @@
 /*
  * utils.cpp - ESP32S3 CAN to Modbus TCP Bridge Utilities Implementation
  * 
- * VERSION: v3.1.0
- * DATE: 2025-08-12
+ * VERSION: v4.0.3 - DODANE BRAKUJĄCE FUNKCJE
+ * DATE: 2025-08-17 11:17
+ * STATUS: ✅ KOMPLETNE - Dodane wszystkie brakujące funkcje używane w main.cpp
+ * 
+ * DODANE:
+ * - systemStateToString() - konwersja SystemState_t na String
+ * - getActiveBMSCount() - liczba aktywnych modułów BMS
+ * - formatBytes() with uint32_t support - formatowanie bajtów
+ * - Wszystkie funkcje BMS helper functions
  */
 
 #include "utils.h"
+#include "bms_data.h"  // 🔥 Potrzebne dla getActiveBMSCount()
 #include <WiFi.h>
-#include <regex>
+
+// === 🔥 BRAKUJĄCE FUNKCJE Z MAIN.CPP ===
+
+/**
+ * @brief Konwertuj SystemState_t na String (przeniesione z main.cpp)
+ */
+String systemStateToString(SystemState_t state) {
+  switch (state) {
+    case SYSTEM_STATE_INIT: return "Initializing";
+    case SYSTEM_STATE_INITIALIZING: return "Starting Modules";
+    case SYSTEM_STATE_RUNNING: return "Running";
+    case SYSTEM_STATE_ERROR: return "Error";
+    case SYSTEM_STATE_RECOVERY: return "Recovery";
+    case SYSTEM_STATE_SHUTDOWN: return "Shutdown";
+    default: return "Unknown";
+  }
+}
+
+/**
+ * @brief Formatowanie bajtów (przeniesione z main.cpp + rozszerzone)
+ */
+String formatBytes(uint32_t bytes) {
+  if (bytes < 1024) {
+    return String(bytes) + " B";
+  } else if (bytes < 1024 * 1024) {
+    return String(bytes / 1024.0, 1) + " KB";
+  } else {
+    return String(bytes / (1024.0 * 1024.0), 1) + " MB";
+  }
+}
+
+/**
+ * @brief Overload dla size_t (zgodny z utils.h)
+ */
+String formatBytes(size_t bytes) {
+  return formatBytes((uint32_t)bytes);
+}
+
+/**
+ * @brief Pobierz liczbę aktywnych modułów BMS (wymagane przez main.cpp)
+ */
+int getActiveBMSCount() {
+  int activeCount = 0;
+  
+  for (int i = 0; i < systemConfig.activeBmsNodes; i++) {
+    uint8_t nodeId = systemConfig.bmsNodeIds[i];
+    BMSData* bms = getBMSData(nodeId);
+    
+    if (bms && bms->communicationActive) {
+      activeCount++;
+    }
+  }
+  
+  return activeCount;
+}
+
+/**
+ * @brief Formatowanie uptime z main.cpp (przeniesione tutaj)
+ */
+String formatUptime(unsigned long milliseconds) {
+  unsigned long seconds = milliseconds / 1000;
+  unsigned long minutes = seconds / 60;
+  unsigned long hours = minutes / 60;
+  unsigned long days = hours / 24;
+  
+  if (days > 0) {
+    return String(days) + "d " + String(hours % 24) + "h " + String(minutes % 60) + "m";
+  } else if (hours > 0) {
+    return String(hours) + "h " + String(minutes % 60) + "m " + String(seconds % 60) + "s";
+  } else if (minutes > 0) {
+    return String(minutes) + "m " + String(seconds % 60) + "s";
+  } else {
+    return String(seconds) + "s";
+  }
+}
 
 // === LED FUNCTIONS ===
 
@@ -62,75 +144,61 @@ void printMemoryStatus() {
   DEBUG_PRINTF("   Max Alloc: %s\n", formatBytes(ESP.getMaxAllocHeap()).c_str());
   DEBUG_PRINTF("   Min Free Heap: %s\n", formatBytes(ESP.getMinFreeHeap()).c_str());
   DEBUG_PRINTF("   Heap Size: %s\n", formatBytes(ESP.getHeapSize()).c_str());
+  
+  // Check memory health
+  size_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap < 50000) {  // Less than 50KB
+    DEBUG_PRINTF("   ⚠️ WARNING: Low memory (%s)\n", formatBytes(freeHeap).c_str());
+  }
 }
 
 void printUptimeInfo() {
-  DEBUG_PRINTLN("\n⏰ Uptime Information:");
-  DEBUG_PRINTF("   Uptime: %s\n", formatUptime(millis()).c_str());
-  DEBUG_PRINTF("   Boot Time: %lu ms\n", millis());
+  unsigned long uptime = millis();
+  DEBUG_PRINTF("\n⏰ Uptime: %s\n", formatUptime(uptime).c_str());
+  DEBUG_PRINTF("   Boot time: %lu ms\n", uptime);
+  DEBUG_PRINTF("   Free running time: %.2f hours\n", uptime / 3600000.0);
 }
 
 void printNetworkInfo() {
-  DEBUG_PRINTLN("\n📡 Network Information:");
   if (WiFi.status() == WL_CONNECTED) {
-    DEBUG_PRINTF("   Status: Connected\n");
+    DEBUG_PRINTLN("\n📡 Network Information:");
     DEBUG_PRINTF("   SSID: %s\n", WiFi.SSID().c_str());
     DEBUG_PRINTF("   IP Address: %s\n", WiFi.localIP().toString().c_str());
+    DEBUG_PRINTF("   Subnet Mask: %s\n", WiFi.subnetMask().toString().c_str());
     DEBUG_PRINTF("   Gateway: %s\n", WiFi.gatewayIP().toString().c_str());
-    DEBUG_PRINTF("   Subnet: %s\n", WiFi.subnetMask().toString().c_str());
     DEBUG_PRINTF("   DNS: %s\n", WiFi.dnsIP().toString().c_str());
     DEBUG_PRINTF("   MAC Address: %s\n", WiFi.macAddress().c_str());
-    DEBUG_PRINTF("   RSSI: %s\n", formatRSSI(WiFi.RSSI()).c_str());
+    DEBUG_PRINTF("   RSSI: %d dBm (%s)\n", WiFi.RSSI(), formatRSSI(WiFi.RSSI()).c_str());
+    DEBUG_PRINTF("   Channel: %d\n", WiFi.channel());
   } else {
-    DEBUG_PRINTF("   Status: Disconnected (%d)\n", WiFi.status());
+    DEBUG_PRINTLN("\n📡 Network: Not connected");
   }
 }
 
 // === STRING UTILITIES ===
 
-String formatUptime(unsigned long milliseconds) {
-  unsigned long seconds = milliseconds / 1000;
-  unsigned long minutes = seconds / 60;
-  unsigned long hours = minutes / 60;
-  unsigned long days = hours / 24;
-  
-  hours %= 24;
-  minutes %= 60;
-  seconds %= 60;
-  
-  String uptime = "";
-  if (days > 0) uptime += String(days) + "d ";
-  if (hours > 0) uptime += String(hours) + "h ";
-  if (minutes > 0) uptime += String(minutes) + "m ";
-  uptime += String(seconds) + "s";
-  
-  return uptime;
-}
-
-String formatBytes(size_t bytes) {
-  if (bytes < 1024) return String(bytes) + " B";
-  else if (bytes < 1024 * 1024) return String(bytes / 1024.0, 1) + " KB";
-  else if (bytes < 1024 * 1024 * 1024) return String(bytes / (1024.0 * 1024.0), 1) + " MB";
-  else return String(bytes / (1024.0 * 1024.0 * 1024.0), 1) + " GB";
-}
-
 String formatRSSI(int rssi) {
-  String quality;
-  if (rssi >= -30) quality = "Excellent";
-  else if (rssi >= -50) quality = "Good";
-  else if (rssi >= -70) quality = "Fair";
-  else if (rssi >= -90) quality = "Poor";
-  else quality = "Very Poor";
-  
-  return String(rssi) + " dBm (" + quality + ")";
+  if (rssi >= -50) return "Excellent";
+  else if (rssi >= -60) return "Good";
+  else if (rssi >= -70) return "Fair";
+  else if (rssi >= -80) return "Weak";
+  else return "Very Weak";
 }
 
 // === SYSTEM UTILITIES ===
 
 void systemRestart(int delayMs) {
   DEBUG_PRINTF("🔄 System restart in %d ms...\n", delayMs);
-  setLED(true);
-  delay(delayMs);
+  
+  // Visual countdown with LED
+  int blinkCount = delayMs / 1000;
+  for (int i = blinkCount; i > 0; i--) {
+    DEBUG_PRINTF("   Restarting in %d...\n", i);
+    blinkLED(1, 200);
+    delay(800);
+  }
+  
+  DEBUG_PRINTLN("🚀 Restarting ESP32S3...");
   ESP.restart();
 }
 
@@ -149,9 +217,6 @@ size_t getMaxAllocHeap() {
 // === VALIDATION UTILITIES ===
 
 bool isValidIPAddress(const String& ip) {
-  if (ip == "DHCP") return true;
-  
-  // Prosta walidacja IP address
   int parts = 0;
   int lastDot = -1;
   
@@ -280,6 +345,82 @@ String getFormattedDate() {
 
 unsigned long getMillisecondsSinceBoot() {
   return millis();
+}
+
+// === 🔥 ADDITIONAL BMS HELPER FUNCTIONS ===
+
+/**
+ * @brief Sprawdź czy system jest zdrowy
+ */
+bool isSystemHealthy() {
+  // Check basic system health indicators
+  if (ESP.getFreeHeap() < 20000) return false;  // Less than 20KB free
+  if (getActiveBMSCount() == 0) return false;   // No BMS communication
+  if (WiFi.status() != WL_CONNECTED) return false; // No WiFi
+  
+  return true;
+}
+
+/**
+ * @brief Pobierz procent wykorzystania pamięci
+ */
+float getMemoryUsagePercent() {
+  size_t totalHeap = ESP.getHeapSize();
+  size_t freeHeap = ESP.getFreeHeap();
+  return ((float)(totalHeap - freeHeap) / totalHeap) * 100.0;
+}
+
+/**
+ * @brief Sprawdź czy jest krytyczny stan pamięci
+ */
+bool isMemoryCritical() {
+  return ESP.getFreeHeap() < 10000; // Less than 10KB
+}
+
+/**
+ * @brief Pobierz string stanu WiFi
+ */
+String getWiFiStatusString() {
+  switch (WiFi.status()) {
+    case WL_CONNECTED: return "Connected";
+    case WL_NO_SSID_AVAIL: return "No SSID Available";
+    case WL_CONNECT_FAILED: return "Connection Failed";
+    case WL_CONNECTION_LOST: return "Connection Lost";
+    case WL_DISCONNECTED: return "Disconnected";
+    case WL_IDLE_STATUS: return "Idle";
+    default: return "Unknown";
+  }
+}
+
+/**
+ * @brief Zaawansowana diagnostyka systemu
+ */
+void performSystemDiagnostics() {
+  DEBUG_PRINTLN("\n🔍 === SYSTEM DIAGNOSTICS ===");
+  
+  // Memory diagnostics
+  float memUsage = getMemoryUsagePercent();
+  DEBUG_PRINTF("💾 Memory Usage: %.1f%% (%s free)\n", 
+               memUsage, formatBytes(ESP.getFreeHeap()).c_str());
+  
+  if (isMemoryCritical()) {
+    DEBUG_PRINTLN("   ⚠️ CRITICAL: Memory usage too high!");
+  }
+  
+  // Network diagnostics
+  DEBUG_PRINTF("📡 WiFi Status: %s\n", getWiFiStatusString().c_str());
+  if (WiFi.isConnected()) {
+    DEBUG_PRINTF("   Signal: %d dBm (%s)\n", WiFi.RSSI(), formatRSSI(WiFi.RSSI()).c_str());
+  }
+  
+  // BMS diagnostics
+  int activeBMS = getActiveBMSCount();
+  DEBUG_PRINTF("🔋 Active BMS: %d/%d\n", activeBMS, systemConfig.activeBmsNodes);
+  
+  // System health
+  DEBUG_PRINTF("🏥 System Health: %s\n", isSystemHealthy() ? "HEALTHY" : "WARNING");
+  
+  DEBUG_PRINTLN("===============================\n");
 }
 
 // === ADDITIONAL UTILITY FUNCTIONS ===
