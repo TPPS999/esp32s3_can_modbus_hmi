@@ -676,3 +676,55 @@ void WiFiManager::populateScanResults() {
   
   WiFi.scanDelete(); // Free memory
 }
+
+// === TRIGGERED AP MODE FUNCTIONS ===
+
+/**
+ * @brief Uruchom tryb AP wyzwalany przez CAN
+ */
+bool WiFiManager::startTriggeredAPMode() {
+  Serial.println("🎯 Starting CAN-triggered AP mode...");
+  
+  // Wygeneruj SSID z sufiksem TRIGGER
+  String triggerSSID = generateAPSSID() + "-TRIGGER";
+  
+  // Uruchom tryb AP z specjalnym SSID
+  bool success = startAPMode(triggerSSID.c_str(), AP_PASSWORD);
+  
+  if (success) {
+    Serial.printf("✅ Triggered AP mode started: %s\n", triggerSSID.c_str());
+    Serial.printf("   Password: %s\n", AP_PASSWORD);
+    Serial.printf("   IP: 192.168.4.1\n");
+    Serial.printf("   Duration: %d seconds\n", AP_MODE_DURATION_MS / 1000);
+  } else {
+    Serial.println("❌ Failed to start triggered AP mode");
+  }
+  
+  return success;
+}
+
+/**
+ * @brief Zatrzymaj wyzwalany tryb AP
+ */
+void WiFiManager::stopTriggeredAPMode() {
+  if (isAPModeActive()) {
+    Serial.println("🛑 Stopping triggered AP mode...");
+    stopAPMode();
+    
+    // Próbuj ponownie połączyć się z WiFi
+    if (configSSID.length() > 0) {
+      Serial.println("🔄 Attempting to reconnect to WiFi...");
+      connect(configSSID.c_str(), configPassword.c_str());
+    }
+  }
+}
+
+/**
+ * @brief Sprawdź czy aktywny jest wyzwalany tryb AP
+ */
+bool WiFiManager::isTriggeredAPModeActive() const {
+  // Sprawdź czy AP jest aktywny i czy to triggered mode
+  return isAPModeActive() && 
+         WiFi.softAPgetStationNum() >= 0 &&  // AP is running
+         apTriggerState.apModeActive;         // Triggered by CAN
+}

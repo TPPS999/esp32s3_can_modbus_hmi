@@ -9,6 +9,7 @@ Ten projekt implementuje most między protokołami CAN Bus i Modbus TCP używaj�
 - **CAN Bus Interface**: Odczyt danych z urządzeń BMS przez protokół CAN
 - **Modbus TCP Server**: Serwer Modbus TCP na porcie 502 
 - **WiFi Connectivity**: Połączenie bezprzewodowe z automatycznym reconnect i fallback do trybu AP
+- **🔥 CAN-Triggered AP Mode**: Tryb AP wyzwalany przez specjalne ramki CAN (ID: 0xEF1)
 - **Multi-BMS Support**: Obsługa do 16 modułów BMS jednocześnie
 - **Real-time Monitoring**: Monitoring w czasie rzeczywistym z diagnostyką systemu
 - **Web Interface**: Interfejs webowy do zarządzania i monitorowania
@@ -23,8 +24,8 @@ Ten projekt implementuje most między protokołami CAN Bus i Modbus TCP używaj�
 - **CAN Bus Speed**: 125 kbps
 
 ### Wykorzystanie Zasobów
-- **RAM**: 16.9% (55,380 bytes z 327,680 bytes)
-- **Flash**: 27.9% (931,244 bytes z 3,342,336 bytes)
+- **RAM**: 17.6% (57,804 bytes z 327,680 bytes)
+- **Flash**: 27.9% (932,268 bytes z 3,342,336 bytes)
 
 ## 📦 Architektura Systemu
 
@@ -93,19 +94,36 @@ const char* const WIFI_PASSWORD = "TwojeHaslo";
 ```cpp
 #define MODBUS_TCP_PORT 502                 // Port Modbus TCP
 #define MODBUS_SLAVE_ID 1                   // ID slave'a
-#define MODBUS_MAX_HOLDING_REGISTERS 2000   // 16 BMS × 125 rejestrów
+#define MODBUS_MAX_HOLDING_REGISTERS 3200   // 16 BMS × 200 rejestrów
 ```
 
 ## 📊 Mapa Rejestrów Modbus
 
-Każdy moduł BMS zajmuje 125 rejestrów Modbus (16-bit każdy):
+Każdy moduł BMS zajmuje 200 rejestrów Modbus (16-bit każdy):
 
 ### Mapowanie adresów:
-- **BMS 1** (Node ID 1): Rejestry 0-124
-- **BMS 2** (Node ID 2): Rejestry 125-249
-- **BMS 3** (Node ID 3): Rejestry 250-374
-- **...** 
-- **BMS 16** (Node ID 16): Rejestry 1875-1999
+- **BMS 1** (Node ID 1): Rejestry 0-199
+- **BMS 2** (Node ID 2): Rejestry 200-399
+- **BMS 3** (Node ID 3): Rejestry 400-599
+- **BMS 4** (Node ID 4): Rejestry 600-799
+- **BMS 5** (Node ID 5): Rejestry 800-999
+- **BMS 6** (Node ID 6): Rejestry 1000-1199
+- **BMS 7** (Node ID 7): Rejestry 1200-1399
+- **BMS 8** (Node ID 8): Rejestry 1400-1599
+- **BMS 9** (Node ID 9): Rejestry 1600-1799
+- **BMS 10** (Node ID 10): Rejestry 1800-1999
+- **BMS 11** (Node ID 11): Rejestry 2000-2199
+- **BMS 12** (Node ID 12): Rejestry 2200-2399
+- **BMS 13** (Node ID 13): Rejestry 2400-2599
+- **BMS 14** (Node ID 14): Rejestry 2600-2799
+- **BMS 15** (Node ID 15): Rejestry 2800-2999
+- **BMS 16** (Node ID 16): Rejestry 3000-3199
+
+### 🎯 Zalety Nowego Mapowania (200 rejestrów na BMS):
+- **Łatwe obliczenia**: BMS_ID × 200 = adres bazowy
+- **Czytelność**: Okrągłe liczby (0, 200, 400, 600...)
+- **Rezerwa na przyszłość**: 75 dodatkowych rejestrów na każdy BMS
+- **Kompatybilność SCADA**: Standardowe przesunięcia 200
 
 ### 📋 Szczegółowa Mapa Rejestrów BMS
 
@@ -241,6 +259,20 @@ Każdy moduł BMS zajmuje 125 rejestrów Modbus (16-bit każdy):
 | 123 | frame490Count | uint16 | - | ×1 | LSB | Licznik ramek 0x490 |
 | 124 | reserved | uint16 | - | ×1 | LSB | Rezerwa |
 
+#### 🔮 Rejestry Rozszerzone i Rezerwa (125-199)
+
+| Adres | Nazwa | Typ Danych | Jednostka | Skala | Format | Opis |
+|-------|-------|------------|-----------|-------|--------|------|
+| 125-149 | future_data | uint16 | var | var | LSB | Rezerwa na przyszłe dane BMS |
+| 150-174 | user_defined | uint16 | var | var | LSB | Rejestry definiowane przez użytkownika |
+| 175-199 | system_reserved | uint16 | - | ×1 | LSB | Rezerwa systemowa |
+
+**Korzyści z rozszerzenia do 200 rejestrów:**
+- 🔮 **75 dodatkowych rejestrów** na każdy BMS dla przyszłych funkcji
+- 📏 **Okrągłe adresy** dla łatwego programowania (BMS1=0, BMS2=200, BMS3=400...)
+- 🔧 **Kompatybilność** z systemami SCADA preferującymi standardowe przesunięcia
+- 🚀 **Skalowalność** dla nowych parametrów BMS bez zmian architektury
+
 ### 🔄 Konwersje Danych
 
 #### Typy Formatów:
@@ -251,6 +283,9 @@ Każdy moduł BMS zajmuje 125 rejestrów Modbus (16-bit każdy):
 
 #### Konwersje Skalowania:
 ```cpp
+// Obliczanie adresu bazowego dla BMS
+uint16_t base_address = (bms_id - 1) * 200;  // BMS 1=0, BMS 2=200, BMS 3=400...
+
 // Napięcie: rejestr → rzeczywista wartość
 float voltage = register_value / 1000.0;  // mV → V
 
@@ -263,6 +298,12 @@ float soc = register_value / 100.0;  // %×100 → %
 // Energia: rejestry 32-bit → rzeczywista wartość
 uint32_t energy_raw = (register_high << 16) | register_low;
 float energy = energy_raw / 100.0;  // Wh×100 → kWh
+
+// Przykłady konkretnych adresów:
+// BMS 1 SOC: adres 3 (0 + 3)
+// BMS 2 SOC: adres 203 (200 + 3)  
+// BMS 3 SOC: adres 403 (400 + 3)
+// BMS 10 SOC: adres 1803 (1800 + 3)
 ```
 
 ### 🔀 Tabela Typów Multipleksera (Frame 0x490)
@@ -391,6 +432,9 @@ System obsługuje następujące typy ramek CAN:
 - **0x1B0-0x1BF**: Dane dodatkowe
 - **0x710-0x71F**: Protokół CANopen
 
+### Ramki Specjalne
+- **0xEF1**: 🔥 **CAN-Triggered AP Mode** - wyzwalacz trybu AP (dane: 0xFF 0xBB)
+
 ### Częstotliwości Transmisji
 - **Wysoka (100ms)**: Ramki 0x190 (dane podstawowe)
 - **Średnia (500ms)**: Ramki 0x290, 0x310, 0x390, 0x410, 0x510
@@ -409,6 +453,64 @@ System obsługuje następujące typy ramek CAN:
 - **Hasło**: `esp32modbus`
 - **IP**: `192.168.4.1`
 - **Port Modbus**: `502`
+
+### 🔥 CAN-Triggered AP Mode (Nowa Funkcja!)
+
+System umożliwia zdalną aktywację trybu AP poprzez specjalne ramki CAN:
+
+#### Parametry Wyzwalacza:
+- **CAN ID**: `0xEF1` (3825 decimal)
+- **Dane**: `0xFF 0xBB` (pierwsze 2 bajty ramki)
+- **Wymagane wystąpienia**: 3 ramki w ciągu 1 sekundy
+- **Czas aktywności AP**: 30 sekund od ostatniego wyzwalacza
+
+#### Jak to działa:
+1. **Detekcja**: System monitoruje magistralę CAN w poszukiwaniu ramek o ID `0xEF1`
+2. **Walidacja**: Sprawdza czy pierwsze 2 bajty to `0xFF 0xBB`
+3. **Liczenie**: Wymaga 3 prawidłowych ramek w oknie 1 sekundy
+4. **Aktywacja**: Uruchamia tryb AP z SSID `ESP32S3-CAN-XXXXXX-TRIGGER`
+5. **Przedłużanie**: Każda kolejna prawidłowa ramka resetuje timer na 30 sekund
+6. **Wyłączenie**: AP wyłącza się automatycznie po 30 sekundach bez wyzwalaczy
+
+#### Przykład wysłania wyzwalacza (SocketCAN Linux):
+```bash
+# Wyślij 3 ramki z odstępem 200ms
+cansend can0 EF1#FFBB000000000000
+sleep 0.2
+cansend can0 EF1#FFBB000000000000  
+sleep 0.2
+cansend can0 EF1#FFBB000000000000
+```
+
+#### Przykład wysłania wyzwalacza (Python):
+```python
+import can
+import time
+
+bus = can.interface.Bus(bustype='socketcan', channel='can0', bitrate=125000)
+
+# Ramka wyzwalacza
+trigger_frame = can.Message(
+    arbitration_id=0xEF1,
+    data=[0xFF, 0xBB, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+    is_extended_id=False
+)
+
+# Wyślij 3 ramki
+for i in range(3):
+    bus.send(trigger_frame)
+    print(f"Wyzwalacz {i+1}/3 wysłany")
+    time.sleep(0.2)
+    
+print("AP mode powinien być aktywny przez 30 sekund")
+```
+
+#### Zalety CAN-Triggered AP:
+- **Bezpieczeństwo**: Tryb AP tylko na żądanie, nie domyślnie aktywny
+- **Zdalność**: Aktywacja z dowolnego urządzenia na magistrali CAN
+- **Automatyzacja**: Możliwość integracji z systemami diagnostycznymi
+- **Elastyczność**: Timer resetuje się z każdym wyzwalaczem
+- **Kompatybilność**: Nie koliduje ze standardowymi ramkami BMS
 
 ## 📈 Monitoring i Diagnostyka
 
@@ -482,7 +584,7 @@ def read_all_bms(client, max_bms=16):
     bms_data = []
     
     for bms_id in range(1, max_bms + 1):
-        base_addr = (bms_id - 1) * 125  # Każdy BMS ma 125 rejestrów
+        base_addr = (bms_id - 1) * 200  # Każdy BMS ma 200 rejestrów
         
         # Sprawdź status komunikacji (rejestr 111)
         result = client.read_holding_registers(base_addr + 111, 1, unit=1)
@@ -602,9 +704,9 @@ BMS1_ReadyToCharge:     Address=40046,  Type=BOOL,    Bit=0
 BMS1_ReadyToDischarge:  Address=40046,  Type=BOOL,    Bit=1
 BMS1_CommOK:            Address=40112,  Type=BOOL
 
-// BMS 2 - dodaj 125 do każdego adresu
-BMS2_Voltage:           Address=40126,  Type=UINT16,  Scale=0.001,  Unit=V
-BMS2_Current:           Address=40127,  Type=INT16,   Scale=0.001,  Unit=A
+// BMS 2 - dodaj 200 do każdego adresu  
+BMS2_Voltage:           Address=40201,  Type=UINT16,  Scale=0.001,  Unit=V
+BMS2_Current:           Address=40202,  Type=INT16,   Scale=0.001,  Unit=A
 // ... itd
 ```
 
@@ -627,6 +729,18 @@ BMS2_Current:           Address=40127,  Type=INT16,   Scale=0.001,  Unit=A
 - Zweryfikuj adres IP ESP32S3
 - Sprawdź mapę rejestrów dla poprawnych adresów
 
+**4. CAN-Triggered AP nie uruchamia się**
+- Sprawdź czy wysyłasz dokładnie 3 ramki w ciągu 1 sekundy
+- Zweryfikuj CAN ID: `0xEF1` (3825 decimal)
+- Sprawdź dane ramki: pierwsze 2 bajty muszą być `0xFF 0xBB`
+- Upewnij się że prędkość CAN to 125 kbps
+- Monitor Serial pokaże logi wyzwalaczy: `🎯 AP Trigger frame received`
+
+**5. Tryb AP wyłącza się za szybko**
+- Każda prawidłowa ramka `0xEF1` resetuje timer na 30 sekund
+- Wyślij kolejne ramki wyzwalacza aby przedłużyć czas aktywności
+- Monitor Serial pokaże: `⏰ AP mode timeout` gdy AP się wyłącza
+
 ### Debug przez Serial Monitor
 ```bash
 pio device monitor --baud 115200 --filter esp32_exception_decoder
@@ -637,6 +751,14 @@ System wyświetla szczegółowe logi zawierające:
 - Odebrane ramki CAN z dekodowaniem
 - Żądania Modbus TCP
 - Diagnostykę błędów
+- **🔥 Logi CAN-triggered AP**:
+  - `📡 AP Trigger system initialized` - inicjalizacja systemu
+  - `🎯 AP Trigger frame received: 0xEF1 [FF BB]` - odebrano wyzwalacz
+  - `   Trigger count: X/3` - postęp liczenia
+  - `🚀 Starting triggered AP mode` - uruchomienie AP
+  - `✅ Triggered AP mode started: ESP32S3-CAN-XXXXXX-TRIGGER` - AP aktywny
+  - `⏰ AP mode timeout: XXXXX ms since last trigger` - timeout AP
+  - `🛑 Stopping triggered AP mode` - zatrzymanie AP
 
 ## 📝 Licencja
 
@@ -676,4 +798,4 @@ Data: 2025-08-17
 - 📦 Pełna implementacja modułowa
 - 🔌 Obsługa 16 modułów BMS
 - 🌐 WiFi Manager z fallback do AP
-- 📊 2000 rejestrów Modbus TCP
+- 📊 3200 rejestrów Modbus TCP

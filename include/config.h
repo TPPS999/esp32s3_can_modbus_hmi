@@ -52,6 +52,14 @@
 #define CAN_FRAME_1B0_BASE  0x1A1
 #define CAN_FRAME_710_BASE  0x701
 
+// === AP MODE TRIGGER CONFIGURATION ===
+#define AP_TRIGGER_CAN_ID   0xEF1      // CAN ID dla wyzwalania trybu AP
+#define AP_TRIGGER_DATA_0   0xFF       // Pierwszy bajt danych
+#define AP_TRIGGER_DATA_1   0xBB       // Drugi bajt danych
+#define AP_TRIGGER_COUNT_REQUIRED   3  // Wymagana liczba wystąpień
+#define AP_TRIGGER_TIME_WINDOW_MS   1000  // Okno czasowe dla wystąpień [ms]
+#define AP_MODE_DURATION_MS         30000 // Czas aktywności AP [ms]
+
 // === CAN FREQUENCY DEFINITIONS ===
 #define CAN_FREQ_HIGH    100   // ms - ramki 190 (podstawowe dane)
 #define CAN_FREQ_MEDIUM  500   // ms - ramki 290,310,390,410,510
@@ -83,7 +91,7 @@ const char* const WIFI_PASSWORD = "PiotrStrzyklaskiNieIstnieje";
 // === MODBUS TCP CONFIGURATION ===
 #define MODBUS_TCP_PORT 502
 #define MODBUS_SLAVE_ID 1
-#define MODBUS_MAX_HOLDING_REGISTERS 2000  // 16 baterii * 125 rejestrów
+#define MODBUS_MAX_HOLDING_REGISTERS 3200  // 16 baterii * 200 rejestrów
 
 // Modbus function codes
 #define MODBUS_FUNC_READ_HOLDING_REGISTERS 0x03
@@ -183,6 +191,16 @@ typedef enum {
   WIFI_STATE_ERROR
 } WiFiState_t;
 
+// === AP MODE TRIGGER STRUCTURE ===
+typedef struct {
+  unsigned long triggerTimestamps[AP_TRIGGER_COUNT_REQUIRED];  // Timestamps wyzwalaczy
+  int triggerCount;                                            // Liczba aktualnych wyzwalaczy
+  unsigned long lastTriggerTime;                               // Czas ostatniego wyzwalacza
+  unsigned long apModeStartTime;                               // Czas startu trybu AP
+  bool apModeActive;                                           // Status trybu AP
+  bool manualAPMode;                                           // Tryb AP włączony ręcznie
+} APTriggerState_t;
+
 // === MODBUS STATE ENUMERATION (bez konfliktu) ===
 typedef enum {
   MODBUS_STATE_UNINITIALIZED = 0,
@@ -244,6 +262,10 @@ struct SystemConfig {
   uint32_t communicationTimeout;
 };
 
+// === GLOBAL VARIABLES ===
+extern SystemConfig systemConfig;
+extern APTriggerState_t apTriggerState;
+
 // === FUNCTION DECLARATIONS ===
 
 // Configuration functions
@@ -252,6 +274,16 @@ bool saveConfiguration();
 void setDefaultConfiguration();
 bool validateConfiguration();
 const SystemConfig& getSystemConfig();
+
+// AP Mode Trigger functions
+void initializeAPTrigger();
+bool processAPTriggerFrame(unsigned long canId, unsigned char len, unsigned char* buf);
+void updateAPModeStatus();
+bool isAPTriggerFrame(unsigned long canId, unsigned char len, unsigned char* buf);
+void resetAPTriggerState();
+bool shouldStartAPMode();
+void startTriggeredAPMode();
+void stopTriggeredAPMode();
 
 // BMS frame type detection functions are in bms_protocol.h
 
@@ -273,8 +305,7 @@ void setLED(bool state);
 // Array size macro
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
-// === TRIGGER CAN ID FOR AP MODE ===
-#define AP_TRIGGER_CAN_ID 0x1FF
+// AP_TRIGGER_CAN_ID już zdefiniowane wcześniej w pliku (linia 56)
 
 // === GLOBAL CONFIGURATION INSTANCE ===
 extern SystemConfig systemConfig;

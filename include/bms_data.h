@@ -253,9 +253,9 @@ inline bool getBMSMasterError(uint8_t nodeId) {
 }
 
 // === MODBUS REGISTER MAP CONSTANTS ===
-#define BMS_REGISTERS_PER_MODULE    125
+#define BMS_REGISTERS_PER_MODULE    200
 
-// Register offsets within each BMS module (base = nodeIndex * 125)
+// Register offsets within each BMS module (base = nodeIndex * 200)
 #define BMS_REG_VOLTAGE             0    // Battery voltage [mV]
 #define BMS_REG_CURRENT             1    // Battery current [mA]
 #define BMS_REG_ENERGY              2    // Remaining energy [0.01kWh]

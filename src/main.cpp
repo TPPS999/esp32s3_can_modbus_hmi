@@ -118,6 +118,9 @@ void loop() {
     handleSystemState();
   }
   
+  // 🔥 AP Mode trigger management (sprawdzaj co pętlę dla responsywności)
+  updateAPModeStatus();
+  
   // 🔥 ROZSZERZONY HEARTBEAT z danymi multipleksera
   if (now - lastHeartbeat >= HEARTBEAT_INTERVAL_MS) {
     lastHeartbeat = now;
@@ -152,6 +155,10 @@ void initializeSystem() {
   if (!systemConfig.configValid) {
     Serial.println("⚠️ Using default configuration");
   }
+  
+  // 🔥 Initialize AP Trigger system
+  printBootProgress("AP Trigger System", true);
+  initializeAPTrigger();
   
   // 🔥 Initialize BMS data structures
   for (int i = 0; i < MAX_BMS_NODES; i++) {
@@ -215,7 +222,7 @@ bool initializeModules() {
     Serial.println("✅ OK");
     Serial.printf("   🎯 Server running on port %d\n", MODBUS_TCP_PORT);
     Serial.printf("   📊 %d holding registers available\n", MODBUS_MAX_HOLDING_REGISTERS);
-    Serial.printf("   🔋 %d BMS modules x 125 registers each\n", MAX_BMS_NODES);
+    Serial.printf("   🔋 %d BMS modules x 200 registers each\n", MAX_BMS_NODES);
   } else {
     Serial.println("❌ FAILED");
     success = false;
@@ -334,7 +341,7 @@ void handleSystemHeartbeat() {
         printBMSHeartbeatExtended(nodeId);  // 🔥 Funkcja z bms_data.h
       } else {
         int batteryIndex = getBMSIndexByNodeId(nodeId);
-        uint16_t baseAddr = batteryIndex * 125;
+        uint16_t baseAddr = batteryIndex * 200;
         Serial.printf("🔋 BMS%d [Modbus:%d]: OFFLINE\n", nodeId, baseAddr);
       }
     }
@@ -396,10 +403,11 @@ void printStartupBanner() {
   Serial.println("🎯 System Capabilities:");
   Serial.printf("   🔋 %d BMS modules support\n", MAX_BMS_NODES);
   Serial.printf("   📊 %d Modbus registers (%d per BMS)\n", 
-               MODBUS_MAX_HOLDING_REGISTERS, 125);
+               MODBUS_MAX_HOLDING_REGISTERS, 200);
   Serial.printf("   🚌 9 CAN frame types (190,290,310,390,410,510,490,1B0,710)\n");
   Serial.printf("   🔥 54 multiplexer types (Frame 490)\n");
   Serial.printf("   📡 WiFi + AP fallback mode\n");
+  Serial.printf("   🎯 CAN-triggered AP mode (CAN ID: 0x%03X)\n", AP_TRIGGER_CAN_ID);
   Serial.printf("   🔗 Modbus TCP Server (port %d)\n", MODBUS_TCP_PORT);
   Serial.println();
 }
@@ -446,3 +454,19 @@ void emergencyActions() {
 
 // === HELPER FUNCTIONS ===
 // All utility functions are defined in utils.cpp
+
+// === 🔥 AP TRIGGER HELPER FUNCTIONS ===
+
+/**
+ * @brief Wrapper do uruchomienia wyzwalanego trybu AP
+ */
+void callWiFiManagerStartTriggeredAP() {
+  wifiManager.startTriggeredAPMode();
+}
+
+/**
+ * @brief Wrapper do zatrzymania wyzwalanego trybu AP
+ */
+void callWiFiManagerStopTriggeredAP() {
+  wifiManager.stopTriggeredAPMode();
+}

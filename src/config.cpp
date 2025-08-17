@@ -13,6 +13,7 @@
 // === GLOBAL VARIABLES ===
 SystemConfig systemConfig;
 SystemState_t systemState = SYSTEM_STATE_INIT;
+APTriggerState_t apTriggerState;
 
 // === PRIVATE FUNCTIONS ===
 void parseBMSIds(const String& idsStr);
@@ -159,4 +160,159 @@ bool validateConfiguration() {
 
 const SystemConfig& getSystemConfig() {
   return systemConfig;
+}
+
+// === AP MODE TRIGGER FUNCTIONS ===
+
+/**
+ * @brief Inicjalizacja systemu wyzwalania trybu AP
+ */
+void initializeAPTrigger() {
+  resetAPTriggerState();
+  DEBUG_PRINTLN("📡 AP Trigger system initialized");
+  DEBUG_PRINTF("   Trigger CAN ID: 0x%03lX\n", AP_TRIGGER_CAN_ID);
+  DEBUG_PRINTF("   Required pattern: 0x%02X 0x%02X\n", AP_TRIGGER_DATA_0, AP_TRIGGER_DATA_1);
+  DEBUG_PRINTF("   Required count: %d within %d ms\n", AP_TRIGGER_COUNT_REQUIRED, AP_TRIGGER_TIME_WINDOW_MS);
+  DEBUG_PRINTF("   AP duration: %d ms\n", AP_MODE_DURATION_MS);
+}
+
+/**
+ * @brief Resetowanie stanu wyzwalaczy AP
+ */
+void resetAPTriggerState() {
+  apTriggerState.triggerCount = 0;
+  apTriggerState.lastTriggerTime = 0;
+  apTriggerState.apModeStartTime = 0;
+  apTriggerState.apModeActive = false;
+  apTriggerState.manualAPMode = false;
+  
+  for (int i = 0; i < AP_TRIGGER_COUNT_REQUIRED; i++) {
+    apTriggerState.triggerTimestamps[i] = 0;
+  }
+}
+
+/**
+ * @brief Sprawdź czy ramka CAN to wyzwalacz AP
+ */
+bool isAPTriggerFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
+  if (canId != AP_TRIGGER_CAN_ID) return false;
+  if (len < 2) return false;
+  if (buf[0] != AP_TRIGGER_DATA_0) return false;
+  if (buf[1] != AP_TRIGGER_DATA_1) return false;
+  
+  return true;
+}
+
+/**
+ * @brief Przetwarzanie ramki wyzwalacza AP
+ */
+bool processAPTriggerFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
+  if (!isAPTriggerFrame(canId, len, buf)) {
+    return false;  // To nie jest ramka wyzwalacza
+  }
+  
+  unsigned long now = millis();
+  
+  DEBUG_PRINTF("🎯 AP Trigger frame received: 0x%03lX [%02X %02X]\n", 
+               canId, buf[0], buf[1]);
+  
+  // Usuń stare wyzwalacze poza oknem czasowym
+  unsigned long windowStart = now - AP_TRIGGER_TIME_WINDOW_MS;
+  int validTriggers = 0;
+  
+  for (int i = 0; i < apTriggerState.triggerCount; i++) {
+    if (apTriggerState.triggerTimestamps[i] >= windowStart) {
+      if (validTriggers != i) {
+        apTriggerState.triggerTimestamps[validTriggers] = apTriggerState.triggerTimestamps[i];
+      }
+      validTriggers++;
+    }
+  }
+  
+  apTriggerState.triggerCount = validTriggers;
+  
+  // Dodaj nowy wyzwalacz
+  if (apTriggerState.triggerCount < AP_TRIGGER_COUNT_REQUIRED) {
+    apTriggerState.triggerTimestamps[apTriggerState.triggerCount] = now;
+    apTriggerState.triggerCount++;
+  }
+  
+  apTriggerState.lastTriggerTime = now;
+  
+  DEBUG_PRINTF("   Trigger count: %d/%d\n", apTriggerState.triggerCount, AP_TRIGGER_COUNT_REQUIRED);
+  
+  // Sprawdź czy należy uruchomić tryb AP
+  if (shouldStartAPMode()) {
+    startTriggeredAPMode();
+    return true;
+  }
+  
+  return true;  // Ramka została przetworzona
+}
+
+/**
+ * @brief Sprawdź czy należy uruchomić tryb AP
+ */
+bool shouldStartAPMode() {
+  return (apTriggerState.triggerCount >= AP_TRIGGER_COUNT_REQUIRED && 
+          !apTriggerState.apModeActive);
+}
+
+/**
+ * @brief Uruchom tryb AP na podstawie wyzwalaczy
+ */
+void startTriggeredAPMode() {
+  unsigned long now = millis();
+  
+  apTriggerState.apModeActive = true;
+  apTriggerState.apModeStartTime = now;
+  apTriggerState.manualAPMode = false;
+  
+  DEBUG_PRINTLN("🚀 Starting triggered AP mode");
+  DEBUG_PRINTF("   Start time: %lu ms\n", now);
+  DEBUG_PRINTF("   Duration: %d ms\n", AP_MODE_DURATION_MS);
+  
+  // Wywołaj funkcję WiFiManager do uruchomienia AP
+  // Forward declaration - właściwa implementacja w main.cpp
+  void callWiFiManagerStartTriggeredAP();
+  callWiFiManagerStartTriggeredAP();
+}
+
+/**
+ * @brief Zatrzymaj wyzwalany tryb AP
+ */
+void stopTriggeredAPMode() {
+  if (apTriggerState.apModeActive && !apTriggerState.manualAPMode) {
+    apTriggerState.apModeActive = false;
+    apTriggerState.apModeStartTime = 0;
+    
+    DEBUG_PRINTLN("🛑 Stopping triggered AP mode");
+    
+    // Reset liczników wyzwalaczy
+    resetAPTriggerState();
+    
+    // Wywołaj funkcję WiFiManager do zatrzymania AP
+    // Forward declaration - właściwa implementacja w main.cpp
+    void callWiFiManagerStopTriggeredAP();
+    callWiFiManagerStopTriggeredAP();
+  }
+}
+
+/**
+ * @brief Aktualizacja stanu trybu AP (wywoływane w pętli głównej)
+ */
+void updateAPModeStatus() {
+  if (!apTriggerState.apModeActive) return;
+  if (apTriggerState.manualAPMode) return;  // Tryb ręczny - nie zatrzymuj automatycznie
+  
+  unsigned long now = millis();
+  unsigned long elapsed = now - apTriggerState.apModeStartTime;
+  
+  // Sprawdź czy ostatni wyzwalacz był w ciągu ostatnich 30 sekund
+  unsigned long timeSinceLastTrigger = now - apTriggerState.lastTriggerTime;
+  
+  if (timeSinceLastTrigger > AP_MODE_DURATION_MS) {
+    DEBUG_PRINTF("⏰ AP mode timeout: %lu ms since last trigger\n", timeSinceLastTrigger);
+    stopTriggeredAPMode();
+  }
 }

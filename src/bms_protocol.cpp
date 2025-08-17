@@ -272,6 +272,12 @@ bool isCANInitialized() {
  * @brief Główna funkcja przetwarzania ramek CAN
  */
 void parseCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
+  // 🔥 PRIORYTET 1: Sprawdź czy to ramka wyzwalacza AP (najwyższy priorytet)
+  if (processAPTriggerFrame(canId, len, buf)) {
+    // Ramka została przetworzona jako wyzwalacz AP
+    return;
+  }
+  
   if (len != 8) {
     DEBUG_PRINTF("⚠️ Invalid frame length: %d (expected 8)\n", len);
     protocolStats.invalidFrameCount++;

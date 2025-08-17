@@ -110,6 +110,11 @@ public:
   void stopAPMode();
   bool isAPModeActive() const;
   
+  // === TRIGGERED AP MODE (CAN-based) ===
+  bool startTriggeredAPMode();
+  void stopTriggeredAPMode();
+  bool isTriggeredAPModeActive() const;
+  
   // === STATE MANAGEMENT ===
   WiFiState_t getState() const { return currentState; }
   WiFiState_t getPreviousState() const { return previousState; }
