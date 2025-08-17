@@ -26,6 +26,21 @@
 #define MAX_CAN_FRAME_LENGTH 8
 #define BMS_PROTOCOL_TIMEOUT_MS 30000
 
+// === 🔥 FRAME TYPE ENUMERATION ===
+typedef enum {
+  BMS_FRAME_TYPE_190 = 0,  // Basic data
+  BMS_FRAME_TYPE_290,      // Cell voltages
+  BMS_FRAME_TYPE_310,      // SOH, temperature
+  BMS_FRAME_TYPE_390,      // Max voltages
+  BMS_FRAME_TYPE_410,      // Temperature, ready states
+  BMS_FRAME_TYPE_510,      // Power limits
+  BMS_FRAME_TYPE_490,      // Multiplexed data
+  BMS_FRAME_TYPE_1B0,      // Additional data
+  BMS_FRAME_TYPE_710,      // CANopen state
+  BMS_FRAME_TYPE_UNKNOWN,
+  BMS_FRAME_TYPE_COUNT = BMS_FRAME_TYPE_UNKNOWN
+} BMSFrameType_t;
+
 // === 🔥 GŁÓWNE FUNKCJE PROTOKOŁU (wymagane przez main.cpp) ===
 
 // Lifecycle management
@@ -106,6 +121,7 @@ BMSFrameType_t getFrameType(unsigned long canId);
 #define MUX490_BALLANCER_TEMP_MAX   0x0D
 #define MUX490_LTC_TEMP_MAX         0x0E
 #define MUX490_INLET_TEMPERATURE    0x0F
+#undef MUX490_OUTLET_TEMPERATURE
 #define MUX490_OUTLET_TEMPERATURE   0x0F  // Same as inlet in data[7]
 #define MUX490_HUMIDITY             0x10
 
@@ -163,6 +179,20 @@ const char* getCANopenStateName(uint8_t state);
 // === 🔥 PROTOCOL STATISTICS ===
 
 typedef struct {
+  unsigned long startTime;
+  unsigned long totalFramesReceived;
+  unsigned long validBMSFrameCount;
+  unsigned long unknownFrameCount;
+  unsigned long invalidFrameCount;
+  unsigned long readErrorCount;
+  unsigned long errorCount;
+  unsigned long timeoutCount;
+  unsigned long slowProcessingCount;
+  unsigned long lastActivity;
+  unsigned long avgProcessingTime;
+  unsigned long maxProcessingTime;
+  
+  // Legacy fields for compatibility
   unsigned long totalFramesProcessed;
   unsigned long validFramesProcessed;
   unsigned long invalidFramesDropped;
@@ -187,7 +217,6 @@ typedef struct {
   // Timing
   unsigned long lastFrameProcessedTime;
   unsigned long averageProcessingTime;
-  unsigned long maxProcessingTime;
   
 } BMSProtocolStats_t;
 
@@ -285,7 +314,7 @@ inline uint8_t getFrameNodeId(unsigned long canId) {
 }
 
 inline bool isFrameTypeValid(BMSFrameType_t frameType) {
-  return frameType >= BMS_FRAME_190 && frameType < BMS_FRAME_UNKNOWN;
+  return frameType >= BMS_FRAME_TYPE_190 && frameType < BMS_FRAME_TYPE_UNKNOWN;
 }
 
 inline bool isMultiplexerTypeValid(uint8_t muxType) {
@@ -304,21 +333,7 @@ inline bool isMultiplexerTypeValid(uint8_t muxType) {
   #define DEBUG_PRINTLN(str)
 #endif
 
-// === 🔥 FRAME TYPE ENUMERATION ===
-
-typedef enum {
-  BMS_FRAME_TYPE_190 = 0,  // Basic data
-  BMS_FRAME_TYPE_290,      // Cell voltages
-  BMS_FRAME_TYPE_310,      // SOH, temperature
-  BMS_FRAME_TYPE_390,      // Max voltages
-  BMS_FRAME_TYPE_410,      // Temperature, ready states
-  BMS_FRAME_TYPE_510,      // Power limits
-  BMS_FRAME_TYPE_490,      // Multiplexed data
-  BMS_FRAME_TYPE_1B0,      // Additional data
-  BMS_FRAME_TYPE_710,      // CANopen state
-  BMS_FRAME_TYPE_UNKNOWN,
-  BMS_FRAME_TYPE_COUNT = BMS_FRAME_TYPE_UNKNOWN
-} BMSFrameType_t;
+// Frame type enumeration is defined at the top of this file
 
 // === 🔥 ERROR CODES ===
 

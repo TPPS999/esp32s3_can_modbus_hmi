@@ -49,6 +49,8 @@ struct BMSData {
   float soh = 0.0;                     // [%] Stan zdrowia baterii
   float cellVoltage = 0.0;             // [mV] Napięcie ogniwa
   float cellTemperature = 0.0;         // [°C] Temperatura ogniwa
+  int8_t cellMinTemperature = 0;       // [°C] Minimalna temperatura ogniwa
+  int8_t cellMeanTemperature = 0;      // [°C] Średnia temperatura ogniwa
   float dcir = 0.0;                    // [mΩ] Impedancja wewnętrzna DC
   bool nonEqualStringsRamp = false;    // Non-equal strings ramp
   bool dynamicLimitationTimer = false; // Dynamic limitation timer
@@ -75,6 +77,8 @@ struct BMSData {
   // Frame 0x510 - limity mocy i I/O
   float dccl = 0.0;                    // [A] Discharge Current Continuous Limit
   float ddcl = 0.0;                    // [A] Discharge Power Continuous Limit
+  uint8_t inputs = 0;                  // Raw input byte
+  uint8_t outputs = 0;                 // Raw output byte
   bool input_IN02 = false;             // Wejście IN02
   bool input_IN01 = false;             // Wejście IN01
   bool relay_AUX4 = false;             // Przekaźnik AUX4
@@ -87,6 +91,7 @@ struct BMSData {
   // Frame 0x490 - multipleksowane dane - podstawowe
   uint8_t mux490Type = 0;              // Typ multipleksera (0x00-0x35)
   uint16_t mux490Value = 0;            // Wartość multipleksera (16-bit)
+  uint8_t frame490Data[8] = {0};       // Raw data z ramki 0x490
   
   // Frame 0x490 - konkretne zmienne multipleksowane (ROZSZERZONE)
   uint16_t serialNumber0 = 0;          // 0x00 - Serial number low
@@ -147,10 +152,13 @@ struct BMSData {
   unsigned long lastUpdate = 0;        // Ostatnia aktualizacja [ms]
   unsigned long firstFrameTime = 0;    // Pierwsza ramka [ms] - DODANE
   unsigned long lastFrameTime = 0;     // Ostatnia ramka [ms] - DODANE
+  unsigned long lastCommunication = 0; // Ostatnia komunikacja [ms]
   bool communicationOk = false;        // Status komunikacji
+  bool communicationActive = false;    // Aktywna komunikacja
   int packetsReceived = 0;             // Liczba odebranych pakietów
   int parseErrors = 0;                 // Liczba błędów parsowania
   int totalFrames = 0;                 // Całkowita liczba ramek - DODANE
+  unsigned long frameTimestamps[10];   // Timestamps for frame types
   
   // === STATYSTYKI RAMEK ===
   int frame190Count = 0;               // Licznik ramek 190

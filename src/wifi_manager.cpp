@@ -70,7 +70,7 @@ bool WiFiManager::begin(const char* ssid, const char* password) {
   WiFi.setHostname(hostname.c_str());
   
   // Setup event handlers
-  WiFi.onEvent([this](WiFiEvent_t event) {
+  WiFi.onEvent([this](arduino_event_id_t event, arduino_event_info_t info) {
     switch (event) {
       case ARDUINO_EVENT_WIFI_STA_CONNECTED:
         Serial.println("📡 WiFi station connected to AP");
@@ -539,3 +539,6 @@ void WiFiManager::printScanResults() const {
                   network.channel,
                   network.isEncrypted ? "🔐" : "📖",
                   authModeToString(network.authMode).c_str());
+  }
+  Serial.println("===================================");
+}

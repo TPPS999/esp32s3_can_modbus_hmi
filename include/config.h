@@ -129,6 +129,35 @@ const char* const WIFI_PASSWORD = "PiotrStrzyklaskiNieIstnieje";
 #define DEBUG_BMS_PARSING 1
 #define DEBUG_WIFI_EVENTS 1
 
+// === EEPROM CONFIGURATION ===
+#define EEPROM_SIZE 512
+#define EEPROM_MAGIC 0
+#define EEPROM_MAGIC_VALUE 0xA5
+#define EEPROM_WIFI_SSID 1
+#define EEPROM_WIFI_PASS 65
+#define EEPROM_DEVICE_IP 129
+#define EEPROM_ACTIVE_BMS 145
+#define EEPROM_BMS_IDS 146
+#define EEPROM_CAN_SPEED 162
+#define MAX_WIFI_SSID_LENGTH 64
+#define MAX_IP_ADDRESS_LENGTH 16
+
+// === CAN PIN DEFINITIONS ===
+#define CAN_CS_PIN SPI_CS_PIN
+
+// CAN speed constants are defined in mcp_can_dfs.h
+
+// === DEBUG MACROS ===
+#ifdef DEBUG_BMS_PARSING
+  #define DEBUG_PRINTF(fmt, ...) Serial.printf(fmt, ##__VA_ARGS__)
+  #define DEBUG_PRINT(str) Serial.print(str)
+  #define DEBUG_PRINTLN(str) Serial.println(str)
+#else
+  #define DEBUG_PRINTF(fmt, ...)
+  #define DEBUG_PRINT(str)
+  #define DEBUG_PRINTLN(str)
+#endif
+
 // === TIMING CONFIGURATION ===
 #define HEARTBEAT_INTERVAL_MS 60000
 #define DIAGNOSTICS_INTERVAL_MS 300000
@@ -163,19 +192,8 @@ typedef enum {
   MODBUS_STATE_CLIENT_CONNECTED
 } ModbusState_t;
 
-// === BMS FRAME TYPE ENUMERATION ===
-typedef enum {
-  BMS_FRAME_190 = 0,  // Basic data
-  BMS_FRAME_290,      // Cell voltages
-  BMS_FRAME_310,      // SOH, temperature
-  BMS_FRAME_390,      // Max voltages
-  BMS_FRAME_410,      // Temperature, ready states
-  BMS_FRAME_510,      // Power limits
-  BMS_FRAME_490,      // Multiplexed data
-  BMS_FRAME_1B0,      // Additional data
-  BMS_FRAME_710,      // CANopen state
-  BMS_FRAME_UNKNOWN
-} BMSFrameType_t;
+// === FORWARD DECLARATIONS ===
+// BMSFrameType_t is defined in bms_protocol.h
 
 // === MULTIPLEXER TYPE ENUMERATION ===
 typedef enum {
@@ -218,6 +236,7 @@ struct SystemConfig {
   char wifiPassword[64];
   uint16_t modbusPort;
   uint8_t modbusSlaveId;
+  uint8_t canSpeed;
   bool enableCanFiltering;
   bool enableModbusWrite;
   bool enableWifiAP;
@@ -231,11 +250,10 @@ struct SystemConfig {
 bool loadConfiguration();
 bool saveConfiguration();
 void setDefaultConfiguration();
+bool validateConfiguration();
 const SystemConfig& getSystemConfig();
 
-// BMS frame type detection
-BMSFrameType_t getFrameType(unsigned long canId);
-const char* frameTypeToString(BMSFrameType_t frameType);
+// BMS frame type detection functions are in bms_protocol.h
 
 // Multiplexer functions
 MultiplexerType getMultiplexerType(uint8_t muxValue);

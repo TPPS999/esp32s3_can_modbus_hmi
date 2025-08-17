@@ -53,23 +53,7 @@ String formatBytes(size_t bytes) {
   return formatBytes((uint32_t)bytes);
 }
 
-/**
- * @brief Pobierz liczbę aktywnych modułów BMS (wymagane przez main.cpp)
- */
-int getActiveBMSCount() {
-  int activeCount = 0;
-  
-  for (int i = 0; i < systemConfig.activeBmsNodes; i++) {
-    uint8_t nodeId = systemConfig.bmsNodeIds[i];
-    BMSData* bms = getBMSData(nodeId);
-    
-    if (bms && bms->communicationActive) {
-      activeCount++;
-    }
-  }
-  
-  return activeCount;
-}
+// getActiveBMSCount is defined in bms_data.cpp
 
 /**
  * @brief Formatowanie uptime z main.cpp (przeniesione tutaj)
@@ -291,15 +275,15 @@ void printCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
   printHexDump(buf, len, "");
   
   // Identyfikacja typu ramki
-  if ((canId & 0xFF80) == BMS_FRAME_190_BASE) DEBUG_PRINT(" (Basic data)");
-  else if ((canId & 0xFF80) == BMS_FRAME_290_BASE) DEBUG_PRINT(" (Cell voltages)");
-  else if ((canId & 0xFF80) == BMS_FRAME_310_BASE) DEBUG_PRINT(" (SOH/Temperature)");
-  else if ((canId & 0xFF80) == BMS_FRAME_390_BASE) DEBUG_PRINT(" (Max limits)");
-  else if ((canId & 0xFF80) == BMS_FRAME_410_BASE) DEBUG_PRINT(" (Temperatures)");
-  else if ((canId & 0xFF80) == BMS_FRAME_510_BASE) DEBUG_PRINT(" (Power limits)");
-  else if ((canId & 0xFF80) == BMS_FRAME_490_BASE) DEBUG_PRINT(" (Multiplexed)");
-  else if ((canId & 0xFF80) == BMS_FRAME_1B0_BASE) DEBUG_PRINT(" (Additional)");
-  else if ((canId & 0xFF80) == BMS_FRAME_710_BASE) DEBUG_PRINT(" (CANopen)");
+  if ((canId & 0xFF80) == CAN_FRAME_190_BASE) DEBUG_PRINT(" (Basic data)");
+  else if ((canId & 0xFF80) == CAN_FRAME_290_BASE) DEBUG_PRINT(" (Cell voltages)");
+  else if ((canId & 0xFF80) == CAN_FRAME_310_BASE) DEBUG_PRINT(" (SOH/Temperature)");
+  else if ((canId & 0xFF80) == CAN_FRAME_390_BASE) DEBUG_PRINT(" (Max limits)");
+  else if ((canId & 0xFF80) == CAN_FRAME_410_BASE) DEBUG_PRINT(" (Temperatures)");
+  else if ((canId & 0xFF80) == CAN_FRAME_510_BASE) DEBUG_PRINT(" (Power limits)");
+  else if ((canId & 0xFF80) == CAN_FRAME_490_BASE) DEBUG_PRINT(" (Multiplexed)");
+  else if ((canId & 0xFF80) == CAN_FRAME_1B0_BASE) DEBUG_PRINT(" (Additional)");
+  else if ((canId & 0xFF80) == CAN_FRAME_710_BASE) DEBUG_PRINT(" (CANopen)");
   else if (canId == AP_TRIGGER_CAN_ID) DEBUG_PRINT(" (AP TRIGGER!)");
   
   DEBUG_PRINTLN();

@@ -122,6 +122,12 @@ void processModbusTCP();
 void handleModbusRequest(WiFiClient& client);
 void sendModbusResponse(WiFiClient& client, uint8_t* response, int length);
 
+// Request handler functions
+void handleReadHoldingRegisters(WiFiClient& client, uint8_t* request, int requestLength);
+void handleWriteSingleRegister(WiFiClient& client, uint8_t* request, int requestLength);
+void handleWriteMultipleRegisters(WiFiClient& client, uint8_t* request, int requestLength);
+void sendErrorResponse(WiFiClient& client, uint8_t functionCode, uint8_t exceptionCode, uint16_t transactionId);
+
 // State and health functions
 bool isModbusServerActive();
 ModbusState_t getModbusState();

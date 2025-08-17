@@ -27,6 +27,7 @@ void printNetworkInfo();
 String formatUptime(unsigned long milliseconds);
 String formatBytes(size_t bytes);
 String formatRSSI(int rssi);
+String systemStateToString(SystemState_t state);
 
 // === SYSTEM UTILITIES ===
 void systemRestart(int delayMs = 3000);
@@ -42,8 +43,8 @@ bool isValidSSID(const String& ssid);
 // === CONVERSION UTILITIES ===
 float convertKelvinToCelsius(float kelvin);
 float convertCelsiusToKelvin(float celsius);
-uint16_t floatToModbusRegister(float value, float multiplier = 1.0);
-float modbusRegisterToFloat(uint16_t reg, float divider = 1.0);
+uint16_t floatToModbusRegister(float value, float scale);
+float modbusRegisterToFloat(uint16_t value, float scale);
 
 // === DEBUG UTILITIES ===
 void printHexDump(const uint8_t* data, size_t length, const char* prefix = "");

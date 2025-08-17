@@ -51,7 +51,6 @@ void processSystemLoop();
 void checkSystemHealth();
 void performSystemDiagnostics();
 void handleSystemHeartbeat();
-void checkCommunicationTimeouts();
 void handleSystemState();
 void emergencyActions();
 void printStartupBanner();
@@ -271,30 +270,6 @@ void checkSystemHealth() {
   }
 }
 
-void checkCommunicationTimeouts() {
-  static unsigned long lastCommCheck = 0;
-  unsigned long now = millis();
-  
-  if (now - lastCommCheck >= 10000) {  // Check every 10 seconds
-    for (int i = 0; i < systemConfig.activeBmsNodes; i++) {
-      uint8_t nodeId = systemConfig.bmsNodeIds[i];
-      BMSData* bms = getBMSData(nodeId);
-      
-      if (bms && bms->communicationOk && (now - bms->lastUpdate > COMMUNICATION_TIMEOUT_MS)) {
-        Serial.printf("⚠️ BMS%d communication timeout!\n", nodeId);
-        bms->communicationOk = false;
-        
-        // Update Modbus register for communication status
-        int batteryIndex = getBMSIndexByNodeId(nodeId);
-        if (batteryIndex >= 0) {
-          uint16_t baseAddr = batteryIndex * 125;
-          holdingRegisters[baseAddr + 111] = 0;  // Communication OK = false
-        }
-      }
-    }
-    lastCommCheck = now;
-  }
-}
 
 void performSystemDiagnostics() {
   Serial.println();
@@ -470,42 +445,4 @@ void emergencyActions() {
 }
 
 // === HELPER FUNCTIONS ===
-
-String systemStateToString(SystemState_t state) {
-  switch (state) {
-    case SYSTEM_STATE_INIT: return "Initializing";
-    case SYSTEM_STATE_INITIALIZING: return "Starting Modules";
-    case SYSTEM_STATE_RUNNING: return "Running";
-    case SYSTEM_STATE_ERROR: return "Error";
-    case SYSTEM_STATE_RECOVERY: return "Recovery";
-    case SYSTEM_STATE_SHUTDOWN: return "Shutdown";
-    default: return "Unknown";
-  }
-}
-
-String formatUptime(unsigned long milliseconds) {
-  unsigned long seconds = milliseconds / 1000;
-  unsigned long minutes = seconds / 60;
-  unsigned long hours = minutes / 60;
-  unsigned long days = hours / 24;
-  
-  if (days > 0) {
-    return String(days) + "d " + String(hours % 24) + "h " + String(minutes % 60) + "m";
-  } else if (hours > 0) {
-    return String(hours) + "h " + String(minutes % 60) + "m " + String(seconds % 60) + "s";
-  } else if (minutes > 0) {
-    return String(minutes) + "m " + String(seconds % 60) + "s";
-  } else {
-    return String(seconds) + "s";
-  }
-}
-
-String formatBytes(uint32_t bytes) {
-  if (bytes < 1024) {
-    return String(bytes) + " B";
-  } else if (bytes < 1024 * 1024) {
-    return String(bytes / 1024.0, 1) + " KB";
-  } else {
-    return String(bytes / (1024.0 * 1024.0), 1) + " MB";
-  }
-}
+// All utility functions are defined in utils.cpp

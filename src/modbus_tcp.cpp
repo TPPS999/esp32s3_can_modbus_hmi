@@ -85,7 +85,7 @@ bool restartModbusTCP() {
 void processModbusTCP() {
   // Accept new clients if none connected
   if (!currentModbusClient || !currentModbusClient.connected()) {
-    currentModbusClient = modbusServerSocket.available();
+    currentModbusClient = modbusServerSocket.accept();
     if (currentModbusClient) {
       Serial.printf("🔗 New Modbus TCP client connected: %s\n", 
                     currentModbusClient.remoteIP().toString().c_str());
@@ -292,7 +292,7 @@ void handleWriteMultipleRegisters(WiFiClient& client, uint8_t* request, int requ
 void sendModbusResponse(WiFiClient& client, uint8_t* response, int length) {
   if (client.connected()) {
     client.write(response, length);
-    client.flush();
+    client.clear();
     modbusStats.totalResponses++;
     modbusStats.bytesSent += length;
     

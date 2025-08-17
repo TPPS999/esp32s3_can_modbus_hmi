@@ -226,16 +226,12 @@ bool initializeMCP2515() {
   }
   
   // Initialize MCP2515 with 125kbps (compatible with BMS)
-  if (canController->begin(MCP_ANY, CAN_125KBPS, MCP_8MHZ) != CAN_OK) {
+  if (canController->begin(CAN_125KBPS) != CAN_OK) {
     DEBUG_PRINTF("❌ MCP2515 initialization failed\n");
     return false;
   }
   
-  // Set to normal mode for communication
-  if (canController->setMode(MCP_NORMAL) != CAN_OK) {
-    DEBUG_PRINTF("❌ Failed to set MCP2515 to normal mode\n");
-    return false;
-  }
+  DEBUG_PRINTF("✅ MCP2515 initialized successfully at 125kbps\n");
   
   DEBUG_PRINTF("✅ MCP2515 initialized: 125kbps, normal mode\n");
   return true;
@@ -250,8 +246,7 @@ void shutdownCAN() {
   canInitialized = false;
   
   if (canController) {
-    // Set to configuration mode (safe shutdown)
-    canController->setMode(MCP_CONFIG);
+    // No setMode function in this library - just clean up
     delete canController;
     canController = nullptr;
   }
@@ -267,68 +262,9 @@ bool isCANInitialized() {
   return canInitialized && canController != nullptr;
 }
 
-/**
- * @brief Przetwarzanie ramek CAN - główna funkcja odbioru
- */
-void processCAN() {
-  if (!canInitialized || !canController) {
-    return;
-  }
-  
-  unsigned long canId;
-  unsigned char len = 0;
-  unsigned char buf[8];
-  
-  // Process all available CAN messages
-  while (canController->checkReceive() == CAN_MSGAVAIL) {
-    // Read CAN frame
-    if (canController->readMsgBuf(&canId, &len, buf) == CAN_OK) {
-      lastCANActivity = millis();
-      protocolStats.totalFramesReceived++;
-      
-      // Validate frame
-      if (protocolConfig.enableFrameValidation) {
-        if (!validateFrameData(canId, len, buf)) {
-          protocolStats.invalidFrameCount++;
-          continue;
-        }
-      }
-      
-      // Log frame if debug enabled
-      if (protocolConfig.enableDebugLogging) {
-        printCANFrame(canId, len, buf);
-      }
-      
-      // Process frame if it's a valid BMS frame
-      if (isValidBMSFrame(canId)) {
-        parseCANFrame(canId, len, buf);
-        protocolStats.validBMSFrameCount++;
-      } else {
-        protocolStats.unknownFrameCount++;
-        if (protocolConfig.enableDebugLogging) {
-          DEBUG_PRINTF("⚠️ Unknown frame ID: 0x%03lX\n", canId);
-        }
-      }
-    } else {
-      protocolStats.readErrorCount++;
-      DEBUG_PRINTF("❌ CAN read error\n");
-    }
-  }
-}
+// processCAN() is aliased to processBMSProtocol() via macro in header
 
-/**
- * @brief Status zdrowia komunikacji CAN
- * @return true jeśli CAN jest zdrowy
- */
-bool isCANHealthy() {
-  if (!canInitialized || !canController) {
-    return false;
-  }
-  
-  // Check recent activity
-  unsigned long timeSinceActivity = millis() - lastCANActivity;
-  return timeSinceActivity < protocolConfig.frameTimeoutMs;
-}
+// isCANHealthy() is aliased to isBMSProtocolHealthy() via macro in header
 
 // === 🔥 FRAME PROCESSING ===
 
@@ -343,32 +279,32 @@ void parseCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
   }
   
   // Route to appropriate parser based on CAN ID
-  if ((canId & 0xFF80) == BMS_FRAME_190_BASE) {
-    uint8_t nodeId = extractNodeId(canId, BMS_FRAME_190_BASE);
+  if ((canId & 0xFF80) == CAN_FRAME_190_BASE) {
+    uint8_t nodeId = extractNodeId(canId, CAN_FRAME_190_BASE);
     if (nodeId > 0) parseBMSFrame190(nodeId, buf);
-  } else if ((canId & 0xFF80) == BMS_FRAME_290_BASE) {
-    uint8_t nodeId = extractNodeId(canId, BMS_FRAME_290_BASE);
+  } else if ((canId & 0xFF80) == CAN_FRAME_290_BASE) {
+    uint8_t nodeId = extractNodeId(canId, CAN_FRAME_290_BASE);
     if (nodeId > 0) parseBMSFrame290(nodeId, buf);
-  } else if ((canId & 0xFF80) == BMS_FRAME_310_BASE) {
-    uint8_t nodeId = extractNodeId(canId, BMS_FRAME_310_BASE);
+  } else if ((canId & 0xFF80) == CAN_FRAME_310_BASE) {
+    uint8_t nodeId = extractNodeId(canId, CAN_FRAME_310_BASE);
     if (nodeId > 0) parseBMSFrame310(nodeId, buf);
-  } else if ((canId & 0xFF80) == BMS_FRAME_390_BASE) {
-    uint8_t nodeId = extractNodeId(canId, BMS_FRAME_390_BASE);
+  } else if ((canId & 0xFF80) == CAN_FRAME_390_BASE) {
+    uint8_t nodeId = extractNodeId(canId, CAN_FRAME_390_BASE);
     if (nodeId > 0) parseBMSFrame390(nodeId, buf);
-  } else if ((canId & 0xFF80) == BMS_FRAME_410_BASE) {
-    uint8_t nodeId = extractNodeId(canId, BMS_FRAME_410_BASE);
+  } else if ((canId & 0xFF80) == CAN_FRAME_410_BASE) {
+    uint8_t nodeId = extractNodeId(canId, CAN_FRAME_410_BASE);
     if (nodeId > 0) parseBMSFrame410(nodeId, buf);
-  } else if ((canId & 0xFF80) == BMS_FRAME_510_BASE) {
-    uint8_t nodeId = extractNodeId(canId, BMS_FRAME_510_BASE);
+  } else if ((canId & 0xFF80) == CAN_FRAME_510_BASE) {
+    uint8_t nodeId = extractNodeId(canId, CAN_FRAME_510_BASE);
     if (nodeId > 0) parseBMSFrame510(nodeId, buf);
-  } else if ((canId & 0xFF80) == BMS_FRAME_490_BASE) {
-    uint8_t nodeId = extractNodeId(canId, BMS_FRAME_490_BASE);
+  } else if ((canId & 0xFF80) == CAN_FRAME_490_BASE) {
+    uint8_t nodeId = extractNodeId(canId, CAN_FRAME_490_BASE);
     if (nodeId > 0) parseBMSFrame490(nodeId, buf);
-  } else if ((canId & 0xFF80) == BMS_FRAME_1B0_BASE) {
-    uint8_t nodeId = extractNodeId(canId, BMS_FRAME_1B0_BASE);
+  } else if ((canId & 0xFF80) == CAN_FRAME_1B0_BASE) {
+    uint8_t nodeId = extractNodeId(canId, CAN_FRAME_1B0_BASE);
     if (nodeId > 0) parseBMSFrame1B0(nodeId, buf);
-  } else if ((canId & 0xFF80) == BMS_FRAME_710_BASE) {
-    uint8_t nodeId = extractNodeId(canId, BMS_FRAME_710_BASE);
+  } else if ((canId & 0xFF80) == CAN_FRAME_710_BASE) {
+    uint8_t nodeId = extractNodeId(canId, CAN_FRAME_710_BASE);
     if (nodeId > 0) parseBMSFrame710(nodeId, buf);
   }
 }
@@ -399,28 +335,7 @@ bool validateFrameData(unsigned long canId, unsigned char len, unsigned char* bu
   return true;
 }
 
-// === 🔥 FRAME 190 PARSER - BASIC DATA (oryginalny kod) ===
-void parseBMSFrame190(uint8_t nodeId, unsigned char* data) {
-  BMSData* bms = getBMSData(nodeId);
-  if (!bms) return;
-  
-  // Parse basic data according to IFS BMS protocol
-  bms->batteryVoltage = ((data[1] << 8) | data[0]) * 0.01;  // V
-  bms->batteryCurrent = ((data[3] << 8) | data[2]) * 0.1 - 1600.0;  // A
-  bms->soc = data[4] * 0.5;  // %
-  bms->remainingEnergy = ((data[6] << 8) | data[5]) * 0.1;  // kWh
-  bms->masterError = (data[7] & 0x01) != 0;
-  
-  // Update frame counter and communication status
-  bms->frame710Count++;
-  updateCommunicationStatus(nodeId);
-  updateFrameTimestamp(nodeId, BMS_FRAME_TYPE_710);
-  
-  if (protocolLoggingEnabled) {
-    DEBUG_PRINTF("📊 BMS%d-710: CANopen State=0x%02X\n", 
-                 nodeId, bms->canopenState);
-  }
-}
+// First parseBMSFrame190 function removed - duplicate definition fixed
 
 // === 🔥 COMMUNICATION MANAGEMENT ===
 
@@ -498,15 +413,15 @@ unsigned long getLastFrameTime(uint8_t nodeId) {
  * @brief Sprawdź czy ramka CAN to poprawna ramka BMS
  */
 bool isValidBMSFrame(unsigned long canId) {
-  return ((canId & 0xFF80) == BMS_FRAME_190_BASE) ||  // Frame 190
-         ((canId & 0xFF80) == BMS_FRAME_290_BASE) ||  // Frame 290
-         ((canId & 0xFF80) == BMS_FRAME_310_BASE) ||  // Frame 310
-         ((canId & 0xFF80) == BMS_FRAME_390_BASE) ||  // Frame 390
-         ((canId & 0xFF80) == BMS_FRAME_410_BASE) ||  // Frame 410
-         ((canId & 0xFF80) == BMS_FRAME_510_BASE) ||  // Frame 510
-         ((canId & 0xFF80) == BMS_FRAME_490_BASE) ||  // Frame 490
-         ((canId & 0xFF80) == BMS_FRAME_1B0_BASE) ||  // Frame 1B0
-         ((canId & 0xFF80) == BMS_FRAME_710_BASE);    // Frame 710
+  return ((canId & 0xFF80) == CAN_FRAME_190_BASE) ||  // Frame 190
+         ((canId & 0xFF80) == CAN_FRAME_290_BASE) ||  // Frame 290
+         ((canId & 0xFF80) == CAN_FRAME_310_BASE) ||  // Frame 310
+         ((canId & 0xFF80) == CAN_FRAME_390_BASE) ||  // Frame 390
+         ((canId & 0xFF80) == CAN_FRAME_410_BASE) ||  // Frame 410
+         ((canId & 0xFF80) == CAN_FRAME_510_BASE) ||  // Frame 510
+         ((canId & 0xFF80) == CAN_FRAME_490_BASE) ||  // Frame 490
+         ((canId & 0xFF80) == CAN_FRAME_1B0_BASE) ||  // Frame 1B0
+         ((canId & 0xFF80) == CAN_FRAME_710_BASE);    // Frame 710
 }
 
 /**
@@ -868,13 +783,32 @@ void printSystemHeartbeat() {
   
   DEBUG_PRINTF("🔋 Active BMS: %d/%d\n", activeBMSCount, systemConfig.activeBmsNodes);
   DEBUG_PRINTF("========================\n\n");
-} status
+}
+
+// === 🔥 FRAME 190 PARSER - BASIC DATA ===
+void parseBMSFrame190(uint8_t nodeId, unsigned char* data) {
+  BMSData* bms = getBMSData(nodeId);
+  if (!bms) return;
+  
+  // Parse basic data from frame 190
+  bms->batteryVoltage = ((data[0] << 8) | data[1]) * 0.01f;     // [V]
+  bms->batteryCurrent = ((data[2] << 8) | data[3]) * 0.01f;     // [A]  
+  bms->remainingEnergy = ((data[4] << 8) | data[5]) * 0.01f;    // [kWh]
+  bms->soc = data[6] * 0.5f;                                     // [%]
+  
+  // Parse error flags from data[7]
+  bms->masterError = (data[7] & 0x01) != 0;
+  bms->cellVoltageError = (data[7] & 0x02) != 0;
+  bms->cellTempMinError = (data[7] & 0x04) != 0;
+  bms->cellTempMaxError = (data[7] & 0x08) != 0;
+  
+  // Update frame counter and communication status
   bms->frame190Count++;
   updateCommunicationStatus(nodeId);
   updateFrameTimestamp(nodeId, BMS_FRAME_TYPE_190);
   
   // Update Modbus registers
-  updateModbusRegistersForBMS(nodeId);
+  updateModbusRegisters(nodeId);
   
   if (protocolLoggingEnabled) {
     DEBUG_PRINTF("📊 BMS%d-190: V=%.2fV I=%.1fA SOC=%.1f%% E=%.1fkWh Err=%d\n", 
@@ -1080,4 +1014,13 @@ void parseBMSFrame710(uint8_t nodeId, unsigned char* data) {
   // Parse CANopen state
   bms->canopenState = data[0];
   
-  // Update frame counter and communication
+  // Update frame counter and communication status
+  bms->frame710Count++;
+  updateCommunicationStatus(nodeId);
+  updateFrameTimestamp(nodeId, BMS_FRAME_TYPE_710);
+  
+  if (protocolLoggingEnabled) {
+    DEBUG_PRINTF("📊 BMS%d-710: CANopen State=0x%02X\n", 
+                 nodeId, bms->canopenState);
+  }
+}
