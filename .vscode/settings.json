@@ -1,0 +1,16 @@
+{
+    "C_Cpp.default.configurationProvider": "platformio-ide",
+    "platformio-ide.activateOnlyOnPlatformIOProject": false,
+    "files.associations": {
+        "*.ino": "cpp",
+        "*.h": "c",
+        "*.cpp": "cpp"
+    },
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "C_Cpp.clang_format_style": "{IndentWidth: 2, TabWidth: 2, UseTab: Never}",
+    "files.exclude": {
+        ".pio": true,
+        ".vscode/.browse.c_cpp.db*": true
+    }
+}
