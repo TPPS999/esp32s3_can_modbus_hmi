@@ -833,6 +833,48 @@ System wyświetla szczegółowe logi zawierające:
   - `⏰ AP mode timeout: XXXXX ms since last trigger` - timeout AP
   - `🛑 Stopping triggered AP mode` - zatrzymanie AP
 
+## 🔄 Development Workflow
+
+This project uses Universal Workflow patterns for professional development with systematic session management.
+
+### 📋 Session Management:
+- **Progress Tracking**: See [DEVELOPMENT_PROGRESS_LOG.md](DEVELOPMENT_PROGRESS_LOG.md) for detailed session history
+- **Session Templates**: See [SESSION_TEMPLATES.md](SESSION_TEMPLATES.md) for startup/work/completion patterns
+- **TodoWrite Patterns**: Systematic task management throughout development sessions
+- **Token Management**: Strategies for managing context and continuity across sessions
+
+### 🔧 Development Standards:
+- **Professional Headers**: All modules include comprehensive documentation headers
+- **Git Conventions**: All commits include Claude Code signature for traceability
+- **Documentation First**: Documentation maintained alongside code changes
+- **Testing Integration**: Hardware testing with actual ESP32S3 and CAN Bus systems
+
+### 👩‍💻 For Developers:
+
+#### Starting New Development Session:
+1. **Environment Setup**: Navigate to project directory and check git status
+2. **Progress Review**: Read last session notes from DEVELOPMENT_PROGRESS_LOG.md
+3. **TodoWrite Setup**: Use appropriate pattern from SESSION_TEMPLATES.md
+4. **Session Planning**: Define specific objectives and priorities
+
+#### During Development:
+- **Regular Updates**: Update todos every major milestone
+- **Documentation**: Add/update headers and documentation with code changes
+- **Commits**: Regular commits every 30-45 minutes for logical units
+- **Progress Logging**: Document important decisions and findings
+
+#### Session Completion:
+- **Logical Closure**: Complete current work unit cleanly  
+- **Progress Update**: Update DEVELOPMENT_PROGRESS_LOG.md with session summary
+- **Final Commit**: Use Claude Code convention with descriptive message
+- **Next Session**: Set specific priorities for continuation
+
+### 🎯 ESP32S3/PlatformIO Specific:
+- **Hardware Considerations**: Memory usage and real-time constraints documented
+- **Module Templates**: Professional headers adapted for Arduino Framework
+- **Compilation Testing**: Regular verification with `pio run`
+- **Embedded Patterns**: Session templates optimized for embedded development
+
 ## 📝 Licencja
 
 Ten projekt jest udostępniony na licencji MIT. Zobacz plik `LICENSE` dla szczegółów.
