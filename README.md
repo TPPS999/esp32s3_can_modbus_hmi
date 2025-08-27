@@ -869,11 +869,77 @@ This project uses Universal Workflow patterns for professional development with 
 - **Final Commit**: Use Claude Code convention with descriptive message
 - **Next Session**: Set specific priorities for continuation
 
+### 🔄 Git Workflow Standards:
+
+This project implements professional git workflow patterns optimized for embedded systems development.
+
+#### 📋 Git Workflow Features:
+- **Standardized Commits**: Professional commit message templates with Claude Code signature
+- **Embedded Development**: ESP32S3-specific commit types (hw, can, modbus, wifi, config)
+- **Automation Scripts**: Helper scripts for common git operations
+- **Hardware Testing**: Special backup procedures before physical testing
+- **Session Integration**: Git operations integrated with session management
+
+#### 🛠️ Git Helper Scripts:
+```bash
+# Comprehensive git status check
+./scripts/git-helpers.sh status
+
+# Hardware testing backup (before ESP32S3 testing)  
+./scripts/git-helpers.sh backup
+
+# End development session with summary
+./scripts/git-helpers.sh end "Phase 4 implementation completed"
+
+# Custom commit with standardized format
+./scripts/git-helpers.sh commit "feat" "add CAN filtering" "Enhanced filtering details"
+
+# Setup git configuration for project
+./scripts/git-helpers.sh config
+```
+
+#### 🏷️ Commit Types for ESP32S3 Development:
+- **Core Development**: `feat`, `fix`, `refactor`, `perf`, `style`
+- **Maintenance**: `docs`, `test`, `chore`
+- **ESP32S3-Specific**: `hw` (hardware), `config` (settings), `can` (CAN bus), `modbus` (Modbus TCP), `wifi` (WiFi connectivity)
+
+#### 📝 Commit Message Template:
+All commits use standardized format with `.gitmessage` template:
+```
+type: brief description (50 characters max)
+
+Optional longer description explaining the change in more detail.
+
+- Specific change 1
+- Specific change 2
+
+🤖 Generated with Claude Code
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+```
+
+#### 🔧 Git Configuration:
+```bash
+# Setup git for this project (run once)
+git config commit.template .gitmessage
+git config core.editor nano
+git config core.autocrlf true
+
+# Or use helper script
+./scripts/git-helpers.sh config
+```
+
+#### 📚 Git Documentation:
+- **Complete Guide**: See [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md) for comprehensive git workflow documentation
+- **Session Integration**: Git patterns integrated in [SESSION_TEMPLATES.md](SESSION_TEMPLATES.md)
+- **Automation**: Complete helper script with ESP32S3-specific patterns
+
 ### 🎯 ESP32S3/PlatformIO Specific:
 - **Hardware Considerations**: Memory usage and real-time constraints documented
 - **Module Templates**: Professional headers adapted for Arduino Framework
 - **Compilation Testing**: Regular verification with `pio run`
 - **Embedded Patterns**: Session templates optimized for embedded development
+- **Git Integration**: Hardware testing backup procedures and embedded-specific commit types
 
 ## 📝 Licencja
 

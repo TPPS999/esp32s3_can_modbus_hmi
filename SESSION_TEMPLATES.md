@@ -202,6 +202,176 @@ EOF
 
 ---
 
+## 🔗 Git Workflow Integration Patterns
+
+### Session Startup Git Workflow
+```bash
+# 1. Enhanced Git Status Check (replaces basic git status)
+./scripts/git-helpers.sh status
+
+# 2. Configure git if first time in session
+./scripts/git-helpers.sh config
+
+# 3. Check for uncommitted work from previous session
+git status
+```
+
+### Git Integration TodoWrite Patterns
+
+#### Session with Git Helper Scripts:
+```
+TodoWrite todos=[
+    {"content": "Review git status with comprehensive helper script", "status": "in_progress"},
+    {"content": "Plan current session objectives", "status": "pending"},
+    {"content": "[Specific development task]", "status": "pending"},
+    {"content": "Use git backup before hardware testing if applicable", "status": "pending"},
+    {"content": "Commit with standardized message format", "status": "pending"}
+]
+```
+
+#### Hardware Testing Session Pattern:
+```
+TodoWrite todos=[
+    {"content": "Create hardware testing backup", "status": "in_progress"},
+    {"content": "Perform ESP32S3 hardware testing", "status": "pending"},
+    {"content": "Document test results", "status": "pending"},
+    {"content": "Commit test results with git helper", "status": "pending"}
+]
+```
+
+### Mid-Session Git Patterns
+
+#### Regular Commit Pattern (every 30-45 minutes):
+```bash
+# Use git helper for standardized commits
+./scripts/git-helpers.sh commit [type] "[brief description]" "[detailed changes]"
+
+# Example:
+./scripts/git-helpers.sh commit "feat" "add CAN filtering" "Enhanced CAN frame filtering with advanced pattern matching"
+```
+
+#### Hardware Testing Backup Pattern:
+```bash
+# Before any hardware testing or risky operations
+./scripts/git-helpers.sh backup
+```
+
+### Session End Git Workflow
+
+#### Standard Session Completion:
+```bash
+# Use git helper for session end commit
+./scripts/git-helpers.sh end "Phase 4 git workflow implementation completed"
+```
+
+#### Alternative Manual Commit (when git-helpers not available):
+```bash
+git add -A
+git commit -m "$(cat <<'EOF'
+[type]: [brief description]
+
+[Detailed description of session work]:
+- [Specific accomplishment 1]
+- [Specific accomplishment 2]  
+- [Specific accomplishment 3]
+
+Next session: [Specific next priorities]
+
+🤖 Generated with Claude Code
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)"
+
+git push origin main
+```
+
+### Git Helper Script Usage Quick Reference
+
+#### Available Commands:
+```bash
+./scripts/git-helpers.sh status      # Comprehensive git status
+./scripts/git-helpers.sh backup     # Hardware testing backup
+./scripts/git-helpers.sh end "msg"  # End session with message
+./scripts/git-helpers.sh commit type "desc" "details"  # Custom commit
+./scripts/git-helpers.sh config     # Setup git configuration
+./scripts/git-helpers.sh test       # Hardware test results commit
+./scripts/git-helpers.sh help       # Show all commands
+```
+
+#### ESP32S3-Specific Commit Types:
+- **Core Development**: feat, fix, refactor, perf, style
+- **Maintenance**: docs, test, chore  
+- **ESP32S3-Specific**: hw (hardware config), config (settings), can (CAN bus), modbus (Modbus TCP), wifi (WiFi)
+
+### Git Workflow Session Integration
+
+#### Enhanced Session Startup Template:
+```bash
+# 1. Navigate to project
+cd "d:\OD\OneDrive - Wanaka sp. z o.o\Documents laptop\PlatformIO\Projects\esp32s3-can-modbus tcp"
+
+# 2. Comprehensive git status check
+./scripts/git-helpers.sh status
+
+# 3. Review progress and setup session
+Read file_path="DEVELOPMENT_PROGRESS_LOG.md" limit=50
+
+# 4. Setup TodoWrite with git integration
+TodoWrite todos=[
+    {"content": "Review git status and previous session progress", "status": "in_progress"},
+    {"content": "[Primary session task]", "status": "pending"},
+    {"content": "Regular commits every 30-45 minutes", "status": "pending"},
+    {"content": "End session with git helper script", "status": "pending"}
+]
+```
+
+#### Enhanced Session End Template:
+```bash
+# 1. Complete current work
+# [Complete logical work unit]
+
+# 2. Update progress log
+Edit file_path="DEVELOPMENT_PROGRESS_LOG.md"
+# [Add session summary]
+
+# 3. Final TodoWrite update
+TodoWrite todos=[all completed]
+
+# 4. Session end with git helper
+./scripts/git-helpers.sh end "[Session accomplishments summary]"
+
+# 5. Verify clean state
+git status
+```
+
+### Hardware Development Git Patterns
+
+#### Before Hardware Testing:
+```
+TodoWrite todos=[
+    {"content": "Prepare code for hardware testing", "status": "in_progress"},
+    {"content": "Create hardware testing backup", "status": "pending"},
+    {"content": "Test on ESP32S3 hardware", "status": "pending"},
+    {"content": "Document hardware test results", "status": "pending"},
+    {"content": "Commit verified functionality", "status": "pending"}
+]
+
+# Backup before testing
+./scripts/git-helpers.sh backup
+```
+
+#### After Hardware Testing:
+```bash
+# If testing successful
+./scripts/git-helpers.sh test
+
+# If testing revealed issues
+./scripts/git-helpers.sh commit "fix" "resolve hardware testing issues" "Fixed CAN bus timing issues discovered during hardware testing"
+```
+
+---
+
 ## ⚠️ Emergency Session Procedures
 
 ### Token Limit Approaching (>80% usage)

@@ -1,0 +1,42 @@
+type: brief description (50 characters max)
+
+Optional longer description explaining the change in more detail.
+Can include multiple paragraphs if needed for complex changes.
+
+- Specific change 1
+- Specific change 2  
+- Specific change 3
+
+🤖 Generated with Claude Code
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+
+# ESP32S3 CAN-Modbus TCP Bridge - Git Commit Message Template
+# 
+# Commit Types for ESP32S3 Project:
+#
+# Core Development Types:
+#   feat:     New feature or functionality
+#   fix:      Bug fix or error correction
+#   refactor: Code refactoring (no functionality change)
+#   perf:     Performance improvements
+#   style:    Code formatting changes (no logic change)
+#
+# Documentation and Maintenance:
+#   docs:     Documentation updates
+#   test:     Adding or updating tests
+#   chore:    Maintenance tasks (dependencies, build, etc.)
+#
+# ESP32S3-Specific Types:
+#   hw:       Hardware configuration changes
+#   config:   Configuration file changes  
+#   can:      CAN bus protocol changes
+#   modbus:   Modbus TCP implementation changes
+#   wifi:     WiFi connectivity changes
+#
+# Guidelines:
+# - Subject line: imperative mood, under 50 characters
+# - Body: explain what and why, not how
+# - Lists: use bullet points for multiple changes
+# - Always include Claude Code signature at the end
+# - Remove all comment lines before committing
