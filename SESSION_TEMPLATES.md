@@ -408,5 +408,207 @@ When ESP32S3 hardware is available:
 
 ---
 
-*Session Templates maintained for ESP32S3 CAN-Modbus TCP Bridge project*  
-*Last Updated: 27.08.2025 (Warsaw Time)*
+## 📋 Template System Integration Patterns
+
+This project now includes a comprehensive template system (Universal Workflow Phase 5) with production-ready code examples, session workflows, and documentation frameworks.
+
+### 🎯 Template-Based Session Patterns
+
+#### Using Session Templates
+```
+# Session startup with template integration
+TodoWrite todos=[
+    {"content": "Copy session-startup-template.md for systematic approach", "status": "in_progress"},
+    {"content": "Follow pre-session checklist from template", "status": "pending"},
+    {"content": "Set up development environment with template commands", "status": "pending"},
+    {"content": "[Primary development task using code templates]", "status": "pending"},
+    {"content": "Document session using debugging-session-template if issues arise", "status": "pending"}
+]
+```
+
+#### Debugging Session with Templates
+```
+# When systematic debugging is required
+TodoWrite todos=[
+    {"content": "Copy debugging-session-template.md for structured approach", "status": "in_progress"},
+    {"content": "Follow Phase 1: Information gathering (15-20 min)", "status": "pending"},
+    {"content": "Execute Phase 2: Hypothesis formation (10-15 min)", "status": "pending"},
+    {"content": "Implement Phase 3: Systematic testing (30-45 min)", "status": "pending"},
+    {"content": "Complete Phase 4: Issue resolution (20-30 min)", "status": "pending"},
+    {"content": "Document findings in project troubleshooting guide", "status": "pending"}
+]
+```
+
+#### Release Preparation Session
+```
+# For production release preparation
+TodoWrite todos=[
+    {"content": "Copy release-preparation-template.md for systematic validation", "status": "in_progress"},
+    {"content": "Phase 1: Code quality assurance and build verification", "status": "pending"},
+    {"content": "Phase 2: Functional testing (CAN, Modbus, WiFi)", "status": "pending"},
+    {"content": "Phase 3: Performance and reliability testing", "status": "pending"},
+    {"content": "Phase 4: Configuration and documentation validation", "status": "pending"},
+    {"content": "Final release authorization and packaging", "status": "pending"}
+]
+```
+
+### 🚀 Code Template Integration Sessions
+
+#### Using Complete CAN Module Template
+```
+# Integrating production-ready CAN handler
+TodoWrite todos=[
+    {"content": "Copy can_handler.h/cpp from templates/examples/complete-can-module/", "status": "in_progress"},
+    {"content": "Customize configuration (pins, bitrate) for ESP32S3 board", "status": "pending"},
+    {"content": "Integrate with existing BMS protocol implementation", "status": "pending"},
+    {"content": "Test compilation and resolve any dependency issues", "status": "pending"},
+    {"content": "Update documentation with new CAN handler capabilities", "status": "pending"},
+    {"content": "Commit enhanced CAN functionality", "status": "pending"}
+]
+```
+
+#### Modbus Register Template Integration
+```
+# Implementing comprehensive register management
+TodoWrite todos=[
+    {"content": "Copy register_map.h/register_handler.cpp from templates/examples/", "status": "in_progress"},
+    {"content": "Adapt register layout for BMS data structure", "status": "pending"},
+    {"content": "Configure CAN-to-Modbus mapping rules", "status": "pending"},
+    {"content": "Test register access with Modbus client tools", "status": "pending"},
+    {"content": "Validate data conversion and scaling factors", "status": "pending"},
+    {"content": "Document register map for end users", "status": "pending"}
+]
+```
+
+#### Web Configuration Template Usage
+```
+# Adding web-based configuration interface
+TodoWrite todos=[
+    {"content": "Copy config_page.h/cpp from templates/examples/web-config-page/", "status": "in_progress"},
+    {"content": "Customize HTML templates for ESP32S3 project branding", "status": "pending"},
+    {"content": "Integrate with existing WiFi manager and configuration", "status": "pending"},
+    {"content": "Add project-specific configuration endpoints", "status": "pending"},
+    {"content": "Test authentication and session management", "status": "pending"},
+    {"content": "Document web interface usage in README", "status": "pending"}
+]
+```
+
+### 📚 Template-Enhanced Documentation Sessions
+
+#### Creating Documentation with Templates
+```
+# Using documentation templates for consistent quality
+TodoWrite todos=[
+    {"content": "Select appropriate template from templates/docs/", "status": "in_progress"},
+    {"content": "Copy module-documentation-template.md for new API docs", "status": "pending"},
+    {"content": "Populate template with ESP32S3-specific information", "status": "pending"},
+    {"content": "Add hardware connection diagrams and code examples", "status": "pending"},
+    {"content": "Cross-reference with troubleshooting-template.md", "status": "pending"},
+    {"content": "Update templates/README.md master index", "status": "pending"}
+]
+```
+
+### 🔧 Template Customization Sessions
+
+#### Adapting Templates for Project Needs
+```
+# Customizing templates for specific requirements
+TodoWrite todos=[
+    {"content": "Analyze project-specific needs against available templates", "status": "in_progress"},
+    {"content": "Modify template configurations (GPIO pins, timing, parameters)", "status": "pending"},
+    {"content": "Update template placeholders with actual project values", "status": "pending"},
+    {"content": "Test customized templates with hardware if available", "status": "pending"},
+    {"content": "Document customization decisions and rationale", "status": "pending"},
+    {"content": "Create project-specific template variants if needed", "status": "pending"}
+]
+```
+
+### 📊 Template System Maintenance
+
+#### Template Quality Assurance Pattern
+```
+# Regular template system maintenance
+TodoWrite todos=[
+    {"content": "Review template usage patterns and effectiveness", "status": "in_progress"},
+    {"content": "Update templates based on project evolution", "status": "pending"},
+    {"content": "Verify all template examples compile successfully", "status": "pending"},
+    {"content": "Update template documentation with new insights", "status": "pending"},
+    {"content": "Cross-check template integration with main project", "status": "pending"},
+    {"content": "Commit template system improvements", "status": "pending"}
+]
+```
+
+### 🎯 Template Selection Guide
+
+#### Session Type → Template Mapping
+
+**Development Sessions:**
+- **Feature Implementation**: Use code templates (CAN, Modbus, Web config)
+- **Bug Fixing**: Start with debugging-session-template.md
+- **Documentation**: Use templates/docs/ documentation templates
+- **Testing/Validation**: Use release-preparation-template.md sections
+
+**Session Complexity:**
+- **Simple (30 min)**: Use session-startup-template.md only
+- **Medium (60 min)**: Combine session + one code template  
+- **Complex (90+ min)**: Use multiple templates with debugging template on standby
+
+**Hardware Integration:**
+- **ESP32S3 Testing**: session-startup + debugging templates
+- **Production Deploy**: release-preparation-template.md full workflow
+
+### 🔗 Template Git Workflow Integration
+
+#### Template-Enhanced Session Commits
+```bash
+# Using templates in git workflow
+./scripts/git-helpers.sh commit "feat" "implement CAN handler template" "
+Integrated complete CAN module template with ESP32S3 optimizations:
+- Added can_handler.h/cpp with TWAI integration
+- Configured for 500kbps bitrate with error recovery
+- Thread-safe message queuing and callback system
+- Production-ready statistics and diagnostics
+
+Templates used: templates/examples/complete-can-module/
+Session approach: session-startup-template.md
+"
+```
+
+#### Template System Commits
+```bash
+# When updating template system itself
+./scripts/git-helpers.sh commit "templates" "enhance session templates" "
+Updated session templates with Phase 5 integration:
+- Added template selection guidance
+- Enhanced TodoWrite patterns with template usage
+- Cross-referenced with code example templates
+- Improved documentation template workflows
+"
+```
+
+### 📈 Template Usage Analytics
+
+#### Tracking Template Effectiveness
+When using templates, document their effectiveness:
+
+- **Session Efficiency**: Did template reduce setup time?
+- **Code Quality**: Did template improve code structure?
+- **Error Reduction**: Fewer bugs with template patterns?
+- **Documentation**: Better documentation with templates?
+- **Knowledge Transfer**: Easier onboarding with templates?
+
+#### Template Session Notes Format
+```markdown
+## Template Usage Notes
+- **Templates Used**: [list of templates]
+- **Customizations Made**: [modifications required]
+- **Effectiveness**: [1-5 rating with comments]
+- **Improvements Needed**: [suggested template enhancements]
+- **Reusability**: [how well template applies to similar tasks]
+```
+
+---
+
+*Session Templates with Universal Workflow Phase 5 Template System Integration*  
+*ESP32S3 CAN-Modbus TCP Bridge Project*  
+*Last Updated: 28.08.2025 (Warsaw Time)*
