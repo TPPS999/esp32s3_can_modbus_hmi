@@ -56,6 +56,8 @@
 
 #include "modbus_tcp.h"
 #include "utils.h"
+#include "trio_hp_monitor.h"
+#include "trio_hp_manager.h"
 
 // === GLOBAL VARIABLES ===
 WiFiServer modbusServerSocket(MODBUS_TCP_PORT);
@@ -436,10 +438,14 @@ void updateModbusRegisters(uint8_t nodeId) {
 }
 
 void updateAllModbusRegisters() {
+  // Update BMS registers
   for (int i = 0; i < systemConfig.activeBmsNodes; i++) {
     uint8_t nodeId = systemConfig.bmsNodeIds[i];
     updateModbusRegisters(nodeId);
   }
+  
+  // Update TRIO HP registers (5000-5199)
+  updateTrioHPModbusRegisters();
 }
 
 void mapBMSDataToModbus(uint8_t nodeId, const BMSData& bmsData) {
@@ -802,4 +808,123 @@ bool writeMultipleRegisters(uint16_t startAddress, uint16_t count, uint16_t* val
   }
   
   return true;
+}
+
+// === TRIO HP REGISTER MAPPING FUNCTIONS ===
+
+void updateTrioHPModbusRegisters() {
+  if (!isTrioHPManagerInitialized()) return;
+  
+  // Update system registers (5000-5019)
+  mapTrioHPSystemDataToModbus();
+  
+  // Update individual module registers (5020-5199) 
+  // Each module gets 4 registers: DC voltage, DC current, AC power, temperature
+  for (uint8_t i = 0; i < TRIO_HP_MAX_MODULES; i++) {
+    if (isModuleActive(i)) {
+      mapTrioHPModuleDataToModbus(i);
+    }
+  }
+}
+
+void mapTrioHPSystemDataToModbus() {
+  const TrioHPSystemData_t* systemData = getSystemData();
+  if (systemData == nullptr) return;
+  
+  uint16_t baseAddr = TRIO_HP_MODBUS_START_REGISTER; // 5000
+  
+  // System-wide data (registers 5000-5019)
+  holdingRegisters[baseAddr + 0] = floatToModbusRegister(getLatestValue(&systemData->systemDCVoltage), 1000);  // System DC voltage (mV)
+  holdingRegisters[baseAddr + 1] = floatToModbusRegister(getLatestValue(&systemData->systemDCCurrent), 1000);  // System DC current (mA)
+  holdingRegisters[baseAddr + 2] = systemData->totalActiveModules;                                             // Active module count
+  holdingRegisters[baseAddr + 3] = floatToModbusRegister(systemData->totalActivePower, 1);                    // Total active power (W)
+  holdingRegisters[baseAddr + 4] = floatToModbusRegister(systemData->totalReactivePower, 1);                  // Total reactive power (VAr)
+  holdingRegisters[baseAddr + 5] = floatToModbusRegister(systemData->averageFrequency, 1000);                 // Average frequency (mHz)
+  holdingRegisters[baseAddr + 6] = floatToModbusRegister(systemData->averageTemperature, 10);                 // Average temperature (0.1°C)
+  holdingRegisters[baseAddr + 7] = floatToModbusRegister(systemData->systemEfficiency, 10);                   // System efficiency (0.1%)
+  
+  // System status (registers 5008-5015)
+  holdingRegisters[baseAddr + 8] = systemData->broadcastPollingActive ? 1 : 0;                                // Broadcast polling status
+  holdingRegisters[baseAddr + 9] = systemData->multicastPollingActive ? 1 : 0;                               // Multicast polling status
+  holdingRegisters[baseAddr + 10] = (systemData->totalPollsExecuted & 0xFFFF);                               // Total polls low
+  holdingRegisters[baseAddr + 11] = ((systemData->totalPollsExecuted >> 16) & 0xFFFF);                       // Total polls high
+  holdingRegisters[baseAddr + 12] = (systemData->successfulDataReads & 0xFFFF);                              // Successful reads low
+  holdingRegisters[baseAddr + 13] = ((systemData->successfulDataReads >> 16) & 0xFFFF);                      // Successful reads high
+  holdingRegisters[baseAddr + 14] = (systemData->dataParsingErrors & 0xFFFF);                                // Parse errors
+  holdingRegisters[baseAddr + 15] = floatToModbusRegister(systemData->averagePollResponseTime, 10);          // Avg response time (0.1ms)
+  
+  // Reserved system registers (5016-5019)
+  holdingRegisters[baseAddr + 16] = 0; // Reserved
+  holdingRegisters[baseAddr + 17] = 0; // Reserved  
+  holdingRegisters[baseAddr + 18] = 0; // Reserved
+  holdingRegisters[baseAddr + 19] = 0; // Reserved
+}
+
+void mapTrioHPModuleDataToModbus(uint8_t moduleId) {
+  const TrioHPModuleData_t* moduleData = getModuleData(moduleId);
+  if (moduleData == nullptr || !moduleData->isMonitored) return;
+  
+  // Calculate register base address: 5020 + (moduleId * 4)
+  // Each module gets 4 registers for basic data
+  uint16_t baseAddr = TRIO_HP_MODBUS_START_REGISTER + 20 + (moduleId * TRIO_HP_REGISTERS_PER_MODULE);
+  
+  // Ensure we don't exceed register range
+  if (baseAddr + TRIO_HP_REGISTERS_PER_MODULE > TRIO_HP_MODBUS_END_REGISTER) return;
+  
+  // Map module data to 4 registers
+  holdingRegisters[baseAddr + 0] = floatToModbusRegister(getLatestValue(&moduleData->dcVoltage), 1000);       // DC voltage (mV)
+  holdingRegisters[baseAddr + 1] = floatToModbusRegister(getLatestValue(&moduleData->dcCurrent), 1000);       // DC current (mA)  
+  holdingRegisters[baseAddr + 2] = floatToModbusRegister(getLatestValue(&moduleData->activePowerTotal), 1);   // Active power (W)
+  holdingRegisters[baseAddr + 3] = floatToModbusRegister(getLatestValue(&moduleData->temperature), 10);       // Temperature (0.1°C)
+}
+
+bool readTrioHPRegister(uint16_t address, uint16_t* value) {
+  if (value == nullptr) return false;
+  
+  // Check if address is in TRIO HP range (5000-5199)
+  if (address < TRIO_HP_MODBUS_START_REGISTER || address > TRIO_HP_MODBUS_END_REGISTER) {
+    return false;
+  }
+  
+  // Read from holding registers array
+  *value = holdingRegisters[address];
+  return true;
+}
+
+bool writeTrioHPRegister(uint16_t address, uint16_t value) {
+  // TRIO HP registers are read-only for safety
+  // Only allow writes to configuration registers if implemented later
+  if (address < TRIO_HP_MODBUS_START_REGISTER || address > TRIO_HP_MODBUS_END_REGISTER) {
+    return false;
+  }
+  
+  // For now, reject all writes to TRIO HP registers
+  Serial.printf("Write rejected: TRIO HP register %d is read-only\n", address);
+  return false;
+}
+
+bool isTrioHPRegister(uint16_t address) {
+  return (address >= TRIO_HP_MODBUS_START_REGISTER && address <= TRIO_HP_MODBUS_END_REGISTER);
+}
+
+uint8_t getTrioHPModuleIdFromRegister(uint16_t address) {
+  if (!isTrioHPRegister(address)) return TRIO_HP_INVALID_MODULE_ID;
+  
+  // System registers: 5000-5019
+  if (address < TRIO_HP_MODBUS_START_REGISTER + 20) {
+    return TRIO_HP_INVALID_MODULE_ID; // System registers, not module-specific
+  }
+  
+  // Module registers: 5020+ (4 registers per module)
+  uint16_t moduleOffset = address - (TRIO_HP_MODBUS_START_REGISTER + 20);
+  uint8_t moduleId = moduleOffset / TRIO_HP_REGISTERS_PER_MODULE;
+  
+  return (moduleId < TRIO_HP_MAX_MODULES) ? moduleId : TRIO_HP_INVALID_MODULE_ID;
+}
+
+uint8_t getTrioHPRegisterOffsetInModule(uint16_t address) {
+  if (!isTrioHPRegister(address)) return 0xFF;
+  
+  uint16_t moduleOffset = address - (TRIO_HP_MODBUS_START_REGISTER + 20);
+  return moduleOffset % TRIO_HP_REGISTERS_PER_MODULE;
 }

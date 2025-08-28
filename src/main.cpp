@@ -61,6 +61,9 @@
 #include "bms_data.h"
 #include "bms_protocol.h"  // 🔥 ZAWIERA: setupCAN, processCAN, isCANHealthy + parsery
 #include "utils.h"
+#include "trio_hp_manager.h"
+#include "trio_hp_monitor.h"
+#include "trio_hp_config.h"
 
 // === SYSTEM STATE VARIABLES ===
 SystemState_t currentSystemState = SYSTEM_STATE_INIT;
@@ -68,6 +71,10 @@ unsigned long systemStartTime = 0;
 unsigned long lastHeartbeat = 0;
 unsigned long lastDiagnostics = 0;
 unsigned long lastStatusCheck = 0;
+
+// === TRIO HP VARIABLES ===
+unsigned long lastTrioHPCheck = 0;
+#define TRIO_HP_CHECK_INTERVAL_MS 1000
 
 // === 🔥 HEARTBEAT AND MONITORING ===
 #define HEARTBEAT_INTERVAL_MS 60000        // 1 minute
@@ -237,6 +244,33 @@ bool initializeModules() {
   Serial.print("🚌 BMS Protocol + CAN... ");
   if (setupBMSProtocol()) {  // 🔥 ZMIANA: setupCAN() → setupBMSProtocol()
     Serial.println("✅ OK");
+  } else {
+    Serial.println("❌ FAILED");
+    success = false;
+  }
+  
+  // 4. Initialize TRIO HP Manager
+  Serial.print("⚡ TRIO HP Manager... ");
+  if (initTrioHPManager()) {
+    Serial.println("✅ OK");
+  } else {
+    Serial.println("❌ FAILED");
+    success = false;
+  }
+  
+  // 5. Initialize TRIO HP Configuration
+  Serial.print("⚙️  TRIO HP Config... ");
+  if (initTrioHPConfig()) {
+    Serial.println("✅ OK");
+  } else {
+    Serial.println("❌ FAILED");
+    success = false;
+  }
+  
+  // 6. Initialize TRIO HP Monitor  
+  Serial.print("📊 TRIO HP Monitor... ");
+  if (initTrioHPMonitor()) {
+    Serial.println("✅ OK");
     Serial.printf("   🎯 Monitoring %d BMS nodes at 125 kbps\n", systemConfig.activeBmsNodes);
     Serial.printf("   🔋 Node IDs: ");
     for (int i = 0; i < systemConfig.activeBmsNodes; i++) {
@@ -270,13 +304,21 @@ void processSystemLoop() {
   // PRIORITY 1: Process CAN messages via BMS Protocol (highest priority - real-time data)
   processBMSProtocol();  // 🔥 ZMIANA: processCAN() → processBMSProtocol()
   
-  // PRIORITY 2: Process WiFi management  
+  // PRIORITY 2: Process TRIO HP management and monitoring
+  unsigned long now = millis();
+  if (now - lastTrioHPCheck >= TRIO_HP_CHECK_INTERVAL_MS) {
+    updateTrioHPManager();
+    updateTrioHPMonitor();
+    lastTrioHPCheck = now;
+  }
+  
+  // PRIORITY 3: Process WiFi management  
   wifiManager.process();
   
-  // PRIORITY 3: Process Modbus TCP requests
+  // PRIORITY 4: Process Modbus TCP requests
   processModbusTCP();
   
-  // PRIORITY 4: Update BMS data timeouts
+  // PRIORITY 5: Update BMS data timeouts
   checkCommunicationTimeouts();
 }
 
