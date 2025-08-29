@@ -65,6 +65,30 @@
 #define WEB_SERVER_PORT 80
 #define CONFIG_JSON_MAX_SIZE 2048
 
+// === SYSTEM STATUS BAR STRUCTURE ===
+typedef struct {
+  // System metrics
+  float cpuUsage;              // CPU usage percentage [%]
+  uint32_t freeMemory;         // Free heap memory [bytes]
+  uint32_t totalMemory;        // Total heap memory [bytes]
+  
+  // Battery metrics
+  float batterySoC;            // State of Charge [%]
+  float batteryCurrent;        // Current [A] (+charge, -discharge)
+  float chargingLimit;         // DCCL limit [A]
+  float dischargingLimit;      // DDCL limit [A]
+  
+  // TRIO HP Power metrics
+  float targetActivePower;     // Target active power [W]
+  float actualActivePower;     // Actual sum active power [W]
+  float targetReactivePower;   // Target reactive power [VAr]
+  float actualReactivePower;   // Actual sum reactive power [VAr]
+  
+  // Status flags
+  bool dataValid;              // True if all data is recent and valid
+  unsigned long lastUpdate;    // Timestamp of last data update [ms]
+} SystemStatusData_t;
+
 // === WEB SERVER CLASS ===
 class ConfigWebServer {
 private:
@@ -84,6 +108,10 @@ private:
   String generateTrioHPConfigPage();
   String generateTrioHPEfficiencyPage();
   String generateTrioHPDataJSON();
+  
+  // System status bar
+  String generateSystemStatusBar();
+  SystemStatusData_t collectSystemStatusData();
   
   // Request handlers
   void handleRoot(AsyncWebServerRequest *request);
@@ -106,6 +134,9 @@ private:
   void handleTrioHPConfigSave(AsyncWebServerRequest *request);
   void handleTrioHPAPI(AsyncWebServerRequest *request);
   void handleTrioHPEfficiency(AsyncWebServerRequest *request);
+  
+  // System status API handler
+  void handleSystemStatusAPI(AsyncWebServerRequest *request);
   
   // Utility functions
   String getContentType(String filename);
@@ -135,6 +166,7 @@ void stopConfigWebServer();
 bool isConfigWebServerRunning();
 void processConfigWebServer();
 
+
 // === HTML COMPONENTS ===
 
 // CSS Styles
@@ -162,6 +194,14 @@ table th, table td { padding: 8px; text-align: left; border-bottom: 1px solid #d
 table th { background-color: #f8f9fa; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+/* System Status Bar */
+.status-bar { background: #34495e; color: white; padding: 8px 15px; margin: -20px -20px 15px -20px; border-radius: 8px 8px 0 0; font-size: 12px; }
+.status-bar .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px; }
+.status-bar .metric { display: flex; flex-direction: column; align-items: center; }
+.status-bar .metric-label { font-weight: bold; margin-bottom: 2px; }
+.status-bar .metric-value { font-size: 11px; opacity: 0.9; }
+.status-bar .section-title { grid-column: 1 / -1; text-align: center; font-weight: bold; border-bottom: 1px solid #4a6074; padding-bottom: 3px; margin-bottom: 5px; }
+@media (max-width: 768px) { .status-bar .status-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; } .status-bar { font-size: 11px; } }
 </style>
 )";
 
@@ -178,6 +218,19 @@ table th { background-color: #f8f9fa; }
 "function refreshStatus() {\n" \
 "  location.reload();\n" \
 "}\n" \
+"function autoRefreshStatusBar() {\n" \
+"  fetch('/api/status').then(r => r.json()).then(data => {\n" \
+"    if(data.system) {\n" \
+"      document.getElementById('cpu-usage').textContent = data.system.cpu + '%';\n" \
+"      document.getElementById('memory-usage').textContent = (data.system.free_memory/1024).toFixed(1) + 'KB';\n" \
+"    }\n" \
+"    if(data.battery) {\n" \
+"      document.getElementById('battery-soc').textContent = data.battery.soc + '%';\n" \
+"      document.getElementById('battery-current').textContent = data.battery.current + 'A';\n" \
+"    }\n" \
+"  }).catch(() => {});\n" \
+"}\n" \
+"setInterval(autoRefreshStatusBar, 2000);\n" \
 "</script>"
 
 #endif // WEB_SERVER_H

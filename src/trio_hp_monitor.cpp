@@ -861,3 +861,22 @@ const char* getPollingTypeName(TrioPollingType_t type) {
     }
 }
 
+// === MISSING FUNCTION IMPLEMENTATION ===
+
+bool setPollingPriority(uint8_t moduleId, uint8_t priority) {
+    if (moduleId == 0 || moduleId > TRIO_HP_MAX_MODULES) {
+        return false;
+    }
+    
+    // Update priority for all polling schedules of this module
+    bool found = false;
+    for (uint16_t i = 0; i < (TRIO_HP_MAX_MODULES * 4); i++) {
+        if (trioPollSchedule[i].moduleId == moduleId && trioPollSchedule[i].isActive) {
+            trioPollSchedule[i].priority = priority;
+            found = true;
+        }
+    }
+    
+    return found;
+}
+

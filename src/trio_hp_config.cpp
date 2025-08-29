@@ -1173,3 +1173,26 @@ void printShutdownSequenceStatus() {
         Serial.printf("Last Error: %s\n", trioHPConfig.shutdown.step_error_message);
     }
 }
+
+// === MISSING FUNCTION IMPLEMENTATION ===
+
+bool restoreConfigFromBackup() {
+    Serial.println("Restoring TRIO HP configuration from backup (defaults)");
+    
+    // Initialize with default configuration
+    bool result = initTrioHPConfig();
+    
+    if (result) {
+        // Try to save the default configuration
+        result = saveTrioHPConfig();
+        if (result) {
+            Serial.println("Default TRIO HP configuration restored and saved");
+        } else {
+            Serial.println("Warning: Could not save restored configuration");
+        }
+    } else {
+        Serial.println("Error: Could not restore default configuration");
+    }
+    
+    return result;
+}

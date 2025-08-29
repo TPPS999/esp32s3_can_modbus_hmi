@@ -289,7 +289,7 @@ bool applyDefaultConfiguration(uint8_t moduleId);
 
 // === DIAGNOSTIC FUNCTIONS ===
 void printModuleStatus(uint8_t moduleId);
-void printSystemStatus();
+void printTrioHPSystemStatus();
 void printDiscoveredModules();
 void printModuleStatistics(uint8_t moduleId);
 void generateModuleReport(uint8_t moduleId, char* buffer, size_t bufferSize);

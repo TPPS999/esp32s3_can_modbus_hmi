@@ -594,7 +594,7 @@ void printModuleStatus(uint8_t moduleId) {
     Serial.printf("Uptime: %d ms\n", getModuleUptime(moduleId));
 }
 
-void printSystemStatus() {
+void printTrioHPSystemStatus() {
     Serial.printf("\n=== TRIO HP System Status ===\n");
     Serial.printf("Total Modules: %d\n", trioSystemStatus.totalModules);
     Serial.printf("Active: %d, Error: %d, Offline: %d\n", 
