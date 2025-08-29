@@ -12,6 +12,9 @@
 # Navigate to project directory
 cd "d:\OD\OneDrive - Wanaka sp. z o.o\Documents laptop\PlatformIO\Projects\esp32s3-can-modbus tcp"
 
+# 🔄 NEW WORKFLOW: Check conversation context first
+tail -n 50 CONVERSATION_LOG.md
+
 # Check git status and recent commits
 git status && git log --oneline -3
 
@@ -213,6 +216,40 @@ git log --oneline | head -5
 - Add new notes about blockers or important discoveries
 - Update file paths if directory structure evolves
 - Keep this file concise but comprehensive for quick session start
+
+## 🔄 NEW WORKFLOW - Conversation Context Awareness
+
+### **CONVERSATION_LOG.md Integration (od 29.08.2025)**
+
+**🎯 Cel:** Rolling log wszystkich interakcji dla lepszego context awareness między sesjami
+
+**📝 Format wpisu:**
+```markdown
+## 2025-08-29 HH:MM (Warszawa)
+👤 User napisał: "treść wiadomości"
+🤖 Jak zrozumiałem: [moje zrozumienie]
+📋 Lista operacji wykonanych: [lista bez szczegółów plików]
+```
+
+**🚀 Na początku każdej sesji:**
+1. **ZAWSZE** sprawdź ostatnie 3-5 wpisów w CONVERSATION_LOG.md
+2. Użyj tego do zrozumienia kontekstu i stanu projektu
+3. Odnieś się do poprzednich ustaleń i postępów
+
+**💬 Język komunikacji:** 
+- **Polski** jako standard dla rozmów i dokumentacji
+- **Angielski** tylko dla komentarzy w kodzie (zgodnie z praktykami)
+
+**📋 Po każdej odpowiedzi:**
+- Aktualizuj CONVERSATION_LOG.md z nową interakcją
+- Zachowaj format: User input → Zrozumienie → Lista operacji
+- Bez szczegółów plików, ale operacje - TAK
+
+### **Benefits:**
+- 🧠 Lepsze context awareness między sesjami
+- 📊 Tracking postępu i flow rozmów
+- ⚡ Szybkie przypomnienie "gdzie byliśmy"
+- 🔄 Ciągłość workflow między przerwami
 
 ---
 
