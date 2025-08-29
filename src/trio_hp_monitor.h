@@ -301,6 +301,15 @@ bool checkParameterAlarms(uint8_t moduleId);
 void handleParameterAlarm(uint8_t moduleId, TrioDataType_t dataType, float value);
 bool isParameterInRange(TrioDataType_t dataType, float value);
 
+// === INTERNAL HELPER FUNCTIONS ===
+bool pollSystemParameter(uint16_t command, TrioDataType_t dataType);
+uint8_t findModuleDataIndex(uint8_t moduleId);
+TrioHPDataBuffer_t* getDataBuffer(const TrioHPModuleData_t* moduleData, TrioDataType_t dataType);
+float calculateSystemEfficiency();
+void executeMulticastPolling();
+uint8_t getNextFastPollModule();
+uint8_t getNextSlowPollModule();
+
 // === UTILITY FUNCTIONS ===
 const char* getDataTypeName(TrioDataType_t dataType);
 const char* getDataTypeUnit(TrioDataType_t dataType);

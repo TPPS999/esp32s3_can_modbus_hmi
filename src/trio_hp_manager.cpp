@@ -678,12 +678,95 @@ bool processTrioHPCanFrame(uint32_t canId, const uint8_t* data, uint8_t length) 
 
 void updateSystemCounters(TrioModuleState_t oldState, TrioModuleState_t newState) {
     // Update system counters when module state changes
-    // This function tracks state transitions for statistics
+    
+    // Count state transitions  
+    if (oldState != newState) {
+        trioSystemStatus.lastStateChangeTime = millis();
+    }
+    
+    // Update module counts by scanning all modules
+    trioSystemStatus.totalModules = 0;
+    trioSystemStatus.activeModules = 0;
+    trioSystemStatus.errorModules = 0;
+    trioSystemStatus.offlineModules = 0;
+    
+    for (uint8_t i = 0; i < TRIO_HP_MAX_MODULES; i++) {
+        if (trioModules[i].moduleId != TRIO_HP_INVALID_MODULE_ID) {
+            trioSystemStatus.totalModules++;
+            
+            switch (trioModules[i].state) {
+                case TRIO_MODULE_STATE_ACTIVE:
+                    trioSystemStatus.activeModules++;
+                    break;
+                case TRIO_MODULE_STATE_ERROR:
+                    trioSystemStatus.errorModules++;
+                    break;
+                case TRIO_MODULE_STATE_OFFLINE:
+                    trioSystemStatus.offlineModules++;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    
+    Serial.printf("[TRIO HP MANAGER] System counters updated: Total=%d, Active=%d, Error=%d, Offline=%d\n",
+                  trioSystemStatus.totalModules,
+                  trioSystemStatus.activeModules,
+                  trioSystemStatus.errorModules,
+                  trioSystemStatus.offlineModules);
 }
 
 void processCommandQueue() {
     // Process any queued commands with retry logic
-    // Implementation for command queue processing
+    
+    for (uint8_t i = 0; i < TRIO_HP_MAX_MODULES; i++) {
+        if (commandQueue[i].moduleId == TRIO_HP_INVALID_MODULE_ID) continue;
+        
+        // Check if command is ready to be processed (not too recent)
+        unsigned long now = millis();
+        if ((now - commandQueue[i].timestamp) < 100) continue; // 100ms minimum delay
+        
+        // Find module slot
+        uint8_t slotIndex = findModuleSlot(commandQueue[i].moduleId);
+        if (slotIndex == TRIO_HP_INVALID_MODULE_ID) {
+            Serial.printf("[TRIO HP MANAGER] Command queue: Module %d not found, removing from queue\n", commandQueue[i].moduleId);
+            commandQueue[i].moduleId = TRIO_HP_INVALID_MODULE_ID;
+            continue;
+        }
+        
+        // Check if we can send this command
+        if (!canSendCommand(commandQueue[i].command)) {
+            Serial.printf("[TRIO HP MANAGER] Command queue: Command 0x%04X not allowed in current state\n", commandQueue[i].command);
+            commandQueue[i].retryCount++;
+            if (commandQueue[i].retryCount > 3) {
+                Serial.printf("[TRIO HP MANAGER] Command queue: Dropping command after 3 retries\n");
+                commandQueue[i].moduleId = TRIO_HP_INVALID_MODULE_ID;
+            }
+            continue;
+        }
+        
+        // Process the command
+        bool success = false;
+        if (commandQueue[i].isControlCommand) {
+            success = sendControlCommand(commandQueue[i].moduleId, commandQueue[i].command, commandQueue[i].controlValue);
+        } else {
+            success = sendFloatCommand(commandQueue[i].moduleId, commandQueue[i].command, (float)commandQueue[i].data);
+        }
+        
+        if (success) {
+            Serial.printf("[TRIO HP MANAGER] Command queue: Successfully sent command 0x%04X to module %d\n", 
+                         commandQueue[i].command, commandQueue[i].moduleId);
+            commandQueue[i].moduleId = TRIO_HP_INVALID_MODULE_ID; // Remove from queue
+        } else {
+            commandQueue[i].retryCount++;
+            commandQueue[i].timestamp = now; // Update timestamp for next retry
+            if (commandQueue[i].retryCount > 5) {
+                Serial.printf("[TRIO HP MANAGER] Command queue: Dropping command after 5 failed attempts\n");
+                commandQueue[i].moduleId = TRIO_HP_INVALID_MODULE_ID;
+            }
+        }
+    }
 }
 
 void autoInitializeModules() {

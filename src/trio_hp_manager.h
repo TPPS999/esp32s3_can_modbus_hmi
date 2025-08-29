@@ -263,6 +263,11 @@ const char* getSystemStateName(TrioSystemState_t state);
  */
 void printSystemOperationalStatus();
 
+// === HELPER FUNCTIONS ===
+void updateSystemCounters(TrioModuleState_t oldState, TrioModuleState_t newState);
+void processCommandQueue();
+void autoInitializeModules();
+
 // === RESPONSE PROCESSING FUNCTIONS ===
 bool processModuleResponse(uint32_t canId, const uint8_t* data, uint8_t length);
 void handleCommandResponse(uint8_t moduleId, const TrioHPCanFrame_t* frame);
