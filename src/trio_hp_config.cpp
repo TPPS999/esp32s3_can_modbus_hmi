@@ -67,6 +67,10 @@ TrioHPConfigValidation_t configValidation;
 // === PRIVATE VARIABLES ===
 static bool configInitialized = false;
 static bool configDirty = false;
+
+// === FORWARD DECLARATIONS ===
+int8_t findModuleConfigIndex(uint8_t moduleId);
+int8_t findFreeConfigSlot();
 static unsigned long lastConfigSave = 0;
 static const uint32_t CONFIG_SAVE_INTERVAL = 60000; // Auto-save every minute
 
@@ -131,7 +135,7 @@ bool loadTrioHPConfig() {
     
     if (calculatedCRC != savedCRC) {
         Serial.println("Configuration CRC mismatch, trying backup");
-        return loadConfigFromBackup();
+        return restoreConfigFromBackup();
     }
     
     Serial.println("TRIO HP configuration loaded from EEPROM");

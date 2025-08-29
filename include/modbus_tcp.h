@@ -196,6 +196,11 @@ void updateModbusRegisters(uint8_t nodeId);
 void updateAllModbusRegisters();
 void mapBMSDataToModbus(uint8_t nodeId, const BMSData& bmsData);
 
+// TRIO HP data mapping functions
+void updateTrioHPModbusRegisters();
+void mapTrioHPSystemDataToModbus();
+void mapTrioHPModuleDataToModbus(uint8_t moduleId);
+
 // Diagnostics and monitoring
 void printModbusStatistics();
 void printModbusRegisterMap();

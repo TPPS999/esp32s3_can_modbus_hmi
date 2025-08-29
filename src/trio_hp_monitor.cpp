@@ -861,4 +861,3 @@ const char* getPollingTypeName(TrioPollingType_t type) {
     }
 }
 
-#endif // TRIO_HP_MONITOR_H
