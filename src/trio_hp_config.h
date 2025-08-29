@@ -195,6 +195,13 @@ typedef struct {
     uint8_t configuredModuleCount;      // Number of configured modules
     TrioHPModuleConfig_t modules[TRIO_HP_MAX_MODULES]; // Module-specific configs
     
+    // Parameter locking system
+    TrioParameterLock_t parameterLock;  // Parameter locking configuration
+    
+    // Startup/Shutdown sequences
+    TrioStartupSequence_t startup;      // Startup sequence state
+    TrioShutdownSequence_t shutdown;    // Shutdown sequence state
+    
 } TrioHPSystemConfig_t;
 
 // === CONFIGURATION VALIDATION STRUCTURE ===
@@ -211,6 +218,68 @@ typedef struct {
     bool checksumValid;                 // Configuration checksum valid
     
 } TrioHPConfigValidation_t;
+
+// === PARAMETER LOCKING SYSTEM ===
+typedef struct {
+    bool parameters_locked;    // Master lock/unlock switch (Modbus register + Web interface)
+    bool allow_power_changes;  // Allow power parameter modifications
+    bool allow_mode_changes;   // Allow work mode parameter modifications
+    uint8_t lock_level;        // 0=unlocked, 1=basic_lock, 2=full_lock
+    unsigned long lock_timestamp; // When parameters were locked [ms]
+    
+    // Lock configuration
+    bool lock_on_startup;      // Automatically lock parameters on system startup
+    bool lock_on_operation;    // Lock parameters when entering operational state
+    uint32_t auto_unlock_timeout; // Auto-unlock timeout [ms] (0 = disabled)
+    
+    // Locked parameter categories
+    bool power_parameters_locked;    // Current/power commands locked
+    bool mode_parameters_locked;     // Work mode commands locked
+    bool config_parameters_locked;   // System configuration locked
+    bool safety_parameters_locked;   // Safety thresholds locked
+    
+} TrioParameterLock_t;
+
+// === STARTUP/SHUTDOWN SEQUENCE STRUCTURES ===
+typedef enum {
+    TRIO_STARTUP_STEP_ESTOP_CHECK = 0,       // 1. E-STOP Check
+    TRIO_STARTUP_STEP_READY_TO_CHARGE,       // 2. Ready to Charge Check
+    TRIO_STARTUP_STEP_AC_CONTACTOR,          // 3. AC Contactor Check
+    TRIO_STARTUP_STEP_HEARTBEAT_DETECTION,   // 4. Heartbeat Detection
+    TRIO_STARTUP_STEP_BROADCAST_SETTINGS,    // 5. Broadcast Settings
+    TRIO_STARTUP_STEP_MODULE_STATE_READ,     // 6. Module State Read
+    TRIO_STARTUP_STEP_MULTICAST_SETTINGS,    // 7. Multicast Settings
+    TRIO_STARTUP_STEP_CALCULATE_CURRENT,     // 8. Calculate Current
+    TRIO_STARTUP_STEP_SEND_POWER_COMMANDS,   // 9. Send Power Commands
+    TRIO_STARTUP_STEP_OPERATIONAL_ON,        // 10. Operational ON
+    TRIO_STARTUP_STEP_COMPLETED
+} TrioStartupStep_t;
+
+typedef enum {
+    TRIO_SHUTDOWN_STEP_CURRENT_ZERO = 0,     // 1. Current to Zero
+    TRIO_SHUTDOWN_STEP_OPERATIONAL_OFF,      // 2. Operational OFF
+    TRIO_SHUTDOWN_STEP_COMPLETED
+} TrioShutdownStep_t;
+
+typedef struct {
+    TrioStartupStep_t current_step;          // Current startup step
+    bool startup_in_progress;                // Startup sequence active
+    bool startup_successful;                 // Startup completed successfully
+    unsigned long step_start_time;           // Current step start time [ms]
+    uint32_t step_timeout;                   // Step timeout [ms]
+    uint8_t step_retry_count;               // Retry count for current step
+    char step_error_message[64];            // Last step error message
+} TrioStartupSequence_t;
+
+typedef struct {
+    TrioShutdownStep_t current_step;         // Current shutdown step
+    bool shutdown_in_progress;               // Shutdown sequence active
+    bool shutdown_successful;                // Shutdown completed successfully
+    unsigned long step_start_time;           // Current step start time [ms]
+    uint32_t step_timeout;                   // Step timeout [ms]
+    uint8_t step_retry_count;               // Retry count for current step
+    char step_error_message[64];            // Last step error message
+} TrioShutdownSequence_t;
 
 // === GLOBAL VARIABLES DECLARATION ===
 extern TrioHPSystemConfig_t trioHPConfig;
@@ -343,5 +412,102 @@ bool optimizePollingSchedule();
 bool adaptConfigurationToLoad();
 bool enablePerformanceMonitoring(bool enable);
 float getConfigurationEfficiency();
+
+// === PARAMETER LOCKING FUNCTIONS ===
+
+/**
+ * @brief Set parameter lock mode
+ * @param lock_level Lock level: 0=unlocked, 1=basic_lock, 2=full_lock
+ * @return true if lock level set successfully, false otherwise
+ */
+bool setParameterLockMode(uint8_t lock_level);
+
+/**
+ * @brief Check if a specific parameter can be modified
+ * @param parameter_id Parameter ID or command code
+ * @return true if parameter can be modified, false if locked
+ */
+bool canModifyParameter(uint16_t parameter_id);
+
+/**
+ * @brief Check if a parameter is locked by name
+ * @param parameter_name Parameter name string
+ * @return true if parameter is locked, false otherwise
+ */
+bool isParameterLocked(const char* parameter_name);
+
+/**
+ * @brief Get current parameter lock configuration
+ * @return Pointer to current lock structure (read-only)
+ */
+const TrioParameterLock_t* getParameterLockStatus();
+
+/**
+ * @brief Unlock all parameters (requires confirmation)
+ * @return true if unlocked successfully, false otherwise
+ */
+bool unlockAllParameters();
+
+// === STARTUP/SHUTDOWN SEQUENCE FUNCTIONS ===
+
+/**
+ * @brief Start 10-step TRIO HP startup sequence
+ * @return true if startup sequence initiated, false otherwise
+ */
+bool startTrioHPStartupSequence();
+
+/**
+ * @brief Process current startup sequence step (call from main loop)
+ * @return true if step processing successful, false if error
+ */
+bool processStartupSequenceStep();
+
+/**
+ * @brief Start 2-step TRIO HP shutdown sequence  
+ * @return true if shutdown sequence initiated, false otherwise
+ */
+bool startTrioHPShutdownSequence();
+
+/**
+ * @brief Process current shutdown sequence step (call from main loop)
+ * @return true if step processing successful, false if error
+ */
+bool processShutdownSequenceStep();
+
+/**
+ * @brief Check if startup sequence is in progress
+ * @return true if startup active, false otherwise
+ */
+bool isStartupSequenceActive();
+
+/**
+ * @brief Check if shutdown sequence is in progress
+ * @return true if shutdown active, false otherwise  
+ */
+bool isShutdownSequenceActive();
+
+/**
+ * @brief Get current startup step name
+ * @param step Startup step enum
+ * @return String name of startup step
+ */
+const char* getStartupStepName(TrioStartupStep_t step);
+
+/**
+ * @brief Get current shutdown step name
+ * @param step Shutdown step enum  
+ * @return String name of shutdown step
+ */
+const char* getShutdownStepName(TrioShutdownStep_t step);
+
+/**
+ * @brief Print startup sequence status to Serial
+ */
+void printStartupSequenceStatus();
+
+/**
+ * @brief Print shutdown sequence status to Serial
+ */
+void printShutdownSequenceStatus();
 
 #endif // TRIO_HP_CONFIG_H

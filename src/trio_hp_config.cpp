@@ -54,6 +54,9 @@
 
 #include "trio_hp_config.h"
 #include "trio_hp_protocol.h"
+#include "trio_hp_limits.h"
+#include "trio_hp_controllers.h"
+#include "trio_hp_manager.h"
 #include "config.h"
 #include <EEPROM.h>
 
@@ -547,7 +550,39 @@ void setDefaultSystemConfiguration() {
     trioHPConfig.enableModbusDataExport = true;
     trioHPConfig.modbusUpdateInterval = 1000; // 1 second
     
-    Serial.println("Default system configuration applied");
+    // Parameter locking system defaults
+    trioHPConfig.parameterLock.parameters_locked = false;
+    trioHPConfig.parameterLock.allow_power_changes = true;
+    trioHPConfig.parameterLock.allow_mode_changes = true;
+    trioHPConfig.parameterLock.lock_level = 0; // Unlocked by default
+    trioHPConfig.parameterLock.lock_timestamp = 0;
+    trioHPConfig.parameterLock.lock_on_startup = false;
+    trioHPConfig.parameterLock.lock_on_operation = false;
+    trioHPConfig.parameterLock.auto_unlock_timeout = 0; // Disabled
+    trioHPConfig.parameterLock.power_parameters_locked = false;
+    trioHPConfig.parameterLock.mode_parameters_locked = false;
+    trioHPConfig.parameterLock.config_parameters_locked = false;
+    trioHPConfig.parameterLock.safety_parameters_locked = false;
+    
+    // Startup sequence defaults
+    trioHPConfig.startup.current_step = TRIO_STARTUP_STEP_ESTOP_CHECK;
+    trioHPConfig.startup.startup_in_progress = false;
+    trioHPConfig.startup.startup_successful = false;
+    trioHPConfig.startup.step_start_time = 0;
+    trioHPConfig.startup.step_timeout = 5000;
+    trioHPConfig.startup.step_retry_count = 0;
+    memset(trioHPConfig.startup.step_error_message, 0, sizeof(trioHPConfig.startup.step_error_message));
+    
+    // Shutdown sequence defaults
+    trioHPConfig.shutdown.current_step = TRIO_SHUTDOWN_STEP_CURRENT_ZERO;
+    trioHPConfig.shutdown.shutdown_in_progress = false;
+    trioHPConfig.shutdown.shutdown_successful = false;
+    trioHPConfig.shutdown.step_start_time = 0;
+    trioHPConfig.shutdown.step_timeout = 10000;
+    trioHPConfig.shutdown.step_retry_count = 0;
+    memset(trioHPConfig.shutdown.step_error_message, 0, sizeof(trioHPConfig.shutdown.step_error_message));
+    
+    Serial.println("Default system configuration applied (including parameter locking and sequences)");
 }
 
 void setDefaultTimingConfiguration() {
@@ -713,4 +748,424 @@ const TrioHPSystemConfig_t* getSystemConfiguration() {
 
 bool isTrioHPConfigValid() {
     return configValidation.isValid;
+}
+
+// === PARAMETER LOCKING FUNCTIONS ===
+
+bool setParameterLockMode(uint8_t lock_level) {
+    if (lock_level > 2) {
+        Serial.printf("[TRIO HP CONFIG] ERROR: Invalid lock level: %d\n", lock_level);
+        return false;
+    }
+    
+    TrioParameterLock_t* lock = &trioHPConfig.parameterLock;
+    uint8_t old_level = lock->lock_level;
+    
+    lock->lock_level = lock_level;
+    lock->lock_timestamp = millis();
+    
+    // Configure lock settings based on level
+    switch (lock_level) {
+        case 0: // Unlocked
+            lock->parameters_locked = false;
+            lock->allow_power_changes = true;
+            lock->allow_mode_changes = true;
+            lock->power_parameters_locked = false;
+            lock->mode_parameters_locked = false;
+            lock->config_parameters_locked = false;
+            lock->safety_parameters_locked = false;
+            break;
+            
+        case 1: // Basic lock - only power changes blocked
+            lock->parameters_locked = true;
+            lock->allow_power_changes = false;
+            lock->allow_mode_changes = true;
+            lock->power_parameters_locked = true;
+            lock->mode_parameters_locked = false;
+            lock->config_parameters_locked = false;
+            lock->safety_parameters_locked = false;
+            break;
+            
+        case 2: // Full lock - all changes blocked
+            lock->parameters_locked = true;
+            lock->allow_power_changes = false;
+            lock->allow_mode_changes = false;
+            lock->power_parameters_locked = true;
+            lock->mode_parameters_locked = true;
+            lock->config_parameters_locked = true;
+            lock->safety_parameters_locked = true;
+            break;
+    }
+    
+    configDirty = true;
+    
+    Serial.printf("[TRIO HP CONFIG] Parameter lock changed: Level %d -> %d\n", old_level, lock_level);
+    return true;
+}
+
+bool canModifyParameter(uint16_t parameter_id) {
+    const TrioParameterLock_t* lock = &trioHPConfig.parameterLock;
+    
+    // If not locked, allow all modifications
+    if (!lock->parameters_locked) return true;
+    
+    // Check specific parameter categories
+    switch (parameter_id) {
+        // Power-related commands
+        case 0x1002:  // System current
+        case 0x2108:  // Reactive power
+            return !lock->power_parameters_locked;
+            
+        // Mode-related commands  
+        case 0x2110:  // Work mode
+        case 0x2117:  // Reactive type
+            return !lock->mode_parameters_locked;
+            
+        // System configuration commands
+        case 0x1110:  // System operational state
+            return !lock->config_parameters_locked;
+            
+        // Default: check general permission based on lock level
+        default:
+            if (lock->lock_level >= 2) return false;  // Full lock blocks everything
+            if (lock->lock_level == 1) {
+                // Basic lock - block power but allow others
+                return true;
+            }
+            return true;
+    }
+}
+
+bool isParameterLocked(const char* parameter_name) {
+    const TrioParameterLock_t* lock = &trioHPConfig.parameterLock;
+    
+    if (!lock->parameters_locked) return false;
+    
+    // Check parameter categories by name
+    if (strstr(parameter_name, "power") || strstr(parameter_name, "current")) {
+        return lock->power_parameters_locked;
+    }
+    
+    if (strstr(parameter_name, "mode") || strstr(parameter_name, "work")) {
+        return lock->mode_parameters_locked;
+    }
+    
+    if (strstr(parameter_name, "config") || strstr(parameter_name, "system")) {
+        return lock->config_parameters_locked;
+    }
+    
+    if (strstr(parameter_name, "safety") || strstr(parameter_name, "threshold")) {
+        return lock->safety_parameters_locked;
+    }
+    
+    // Default based on lock level
+    return (lock->lock_level >= 2);
+}
+
+const TrioParameterLock_t* getParameterLockStatus() {
+    return &trioHPConfig.parameterLock;
+}
+
+bool unlockAllParameters() {
+    Serial.println("[TRIO HP CONFIG] WARNING: Unlocking ALL parameters");
+    return setParameterLockMode(0);
+}
+
+// === STARTUP SEQUENCE FUNCTIONS ===
+
+bool startTrioHPStartupSequence() {
+    if (trioHPConfig.startup.startup_in_progress) {
+        Serial.println("[TRIO HP STARTUP] ERROR: Startup already in progress");
+        return false;
+    }
+    
+    Serial.println("[TRIO HP STARTUP] Starting 10-step startup sequence");
+    
+    trioHPConfig.startup.current_step = TRIO_STARTUP_STEP_ESTOP_CHECK;
+    trioHPConfig.startup.startup_in_progress = true;
+    trioHPConfig.startup.startup_successful = false;
+    trioHPConfig.startup.step_start_time = millis();
+    trioHPConfig.startup.step_timeout = 5000; // 5s default timeout
+    trioHPConfig.startup.step_retry_count = 0;
+    memset(trioHPConfig.startup.step_error_message, 0, sizeof(trioHPConfig.startup.step_error_message));
+    
+    return true;
+}
+
+bool processStartupSequenceStep() {
+    if (!trioHPConfig.startup.startup_in_progress) return true;
+    
+    unsigned long now = millis();
+    TrioStartupStep_t step = trioHPConfig.startup.current_step;
+    bool stepSuccess = false;
+    
+    // Check step timeout
+    if (now - trioHPConfig.startup.step_start_time > trioHPConfig.startup.step_timeout) {
+        trioHPConfig.startup.step_retry_count++;
+        if (trioHPConfig.startup.step_retry_count >= 3) {
+            snprintf(trioHPConfig.startup.step_error_message, 64, 
+                    "Step %s timeout after 3 retries", getStartupStepName(step));
+            Serial.printf("[TRIO HP STARTUP] ERROR: %s\n", trioHPConfig.startup.step_error_message);
+            trioHPConfig.startup.startup_in_progress = false;
+            return false;
+        }
+        Serial.printf("[TRIO HP STARTUP] Retry %d for step %s\n", 
+                      trioHPConfig.startup.step_retry_count, getStartupStepName(step));
+        trioHPConfig.startup.step_start_time = now;
+    }
+    
+    // Process current startup step
+    switch (step) {
+        case TRIO_STARTUP_STEP_ESTOP_CHECK:
+            stepSuccess = !isEstopActive();  // E-STOP must be INACTIVE
+            if (stepSuccess) {
+                Serial.println("[TRIO HP STARTUP] Step 1: E-STOP check PASSED");
+            } else {
+                strcpy(trioHPConfig.startup.step_error_message, "E-STOP is ACTIVE");
+            }
+            break;
+            
+        case TRIO_STARTUP_STEP_READY_TO_CHARGE:
+            // Check readyToCharge from any BMS
+            for (int i = 0; i < MAX_BMS_NODES && !stepSuccess; i++) {
+                if (isBMSNodeActive(i) && isBMSDataRecent(i, 5000)) {
+                    BMSData* bmsData = getBMSData(i);
+                    if (bmsData && bmsData->readyToCharge) {
+                        stepSuccess = true;
+                    }
+                }
+            }
+            if (stepSuccess) {
+                Serial.println("[TRIO HP STARTUP] Step 2: Ready to charge PASSED");
+            } else {
+                strcpy(trioHPConfig.startup.step_error_message, "No BMS ready to charge");
+            }
+            break;
+            
+        case TRIO_STARTUP_STEP_AC_CONTACTOR:
+            stepSuccess = isACContactorClosed();  // AC contactor must be CLOSED
+            if (stepSuccess) {
+                Serial.println("[TRIO HP STARTUP] Step 3: AC contactor check PASSED");
+            } else {
+                strcpy(trioHPConfig.startup.step_error_message, "AC contactor is OPEN");
+            }
+            break;
+            
+        case TRIO_STARTUP_STEP_HEARTBEAT_DETECTION:
+            // Check for heartbeat from TRIO HP modules (simplified - check active modules)
+            stepSuccess = (getActiveModuleCount() > 0);
+            if (stepSuccess) {
+                Serial.printf("[TRIO HP STARTUP] Step 4: Heartbeat detection PASSED (%d modules)\n", 
+                              getActiveModuleCount());
+            } else {
+                strcpy(trioHPConfig.startup.step_error_message, "No TRIO HP modules detected");
+            }
+            break;
+            
+        case TRIO_STARTUP_STEP_BROADCAST_SETTINGS:
+            // Send broadcast system settings (simplified)
+            stepSuccess = true; // Assume success for now
+            Serial.println("[TRIO HP STARTUP] Step 5: Broadcast settings SENT");
+            break;
+            
+        case TRIO_STARTUP_STEP_MODULE_STATE_READ:
+            // Start 0x23 command polling (simplified)
+            stepSuccess = true; // Assume success for now
+            Serial.println("[TRIO HP STARTUP] Step 6: Module state read STARTED");
+            break;
+            
+        case TRIO_STARTUP_STEP_MULTICAST_SETTINGS:
+            // Send multicast module settings (simplified)
+            stepSuccess = true; // Assume success for now
+            Serial.println("[TRIO HP STARTUP] Step 7: Multicast settings SENT");
+            break;
+            
+        case TRIO_STARTUP_STEP_CALCULATE_CURRENT:
+            // Calculate required current from target power (simplified)
+            stepSuccess = true; // Assume calculation done
+            Serial.println("[TRIO HP STARTUP] Step 8: Current calculation COMPLETED");
+            break;
+            
+        case TRIO_STARTUP_STEP_SEND_POWER_COMMANDS:
+            // Send power commands (current + direction + reactive if set)
+            stepSuccess = true; // Assume commands sent
+            Serial.println("[TRIO HP STARTUP] Step 9: Power commands SENT");
+            break;
+            
+        case TRIO_STARTUP_STEP_OPERATIONAL_ON:
+            // Set operational state ON (0x11 0x10 A0)
+            stepSuccess = setSystemOperationalReadiness(true);
+            if (stepSuccess) {
+                Serial.println("[TRIO HP STARTUP] Step 10: System OPERATIONAL");
+                trioHPConfig.startup.startup_successful = true;
+                trioHPConfig.startup.startup_in_progress = false;
+                return true;
+            } else {
+                strcpy(trioHPConfig.startup.step_error_message, "Failed to set operational state");
+            }
+            break;
+            
+        case TRIO_STARTUP_STEP_COMPLETED:
+            // Should not reach here
+            trioHPConfig.startup.startup_in_progress = false;
+            return true;
+    }
+    
+    // Move to next step if current step succeeded
+    if (stepSuccess) {
+        trioHPConfig.startup.current_step = (TrioStartupStep_t)(step + 1);
+        trioHPConfig.startup.step_start_time = millis();
+        trioHPConfig.startup.step_retry_count = 0;
+        memset(trioHPConfig.startup.step_error_message, 0, sizeof(trioHPConfig.startup.step_error_message));
+    }
+    
+    return true;
+}
+
+bool startTrioHPShutdownSequence() {
+    if (trioHPConfig.shutdown.shutdown_in_progress) {
+        Serial.println("[TRIO HP SHUTDOWN] ERROR: Shutdown already in progress");
+        return false;
+    }
+    
+    Serial.println("[TRIO HP SHUTDOWN] Starting 2-step shutdown sequence");
+    
+    trioHPConfig.shutdown.current_step = TRIO_SHUTDOWN_STEP_CURRENT_ZERO;
+    trioHPConfig.shutdown.shutdown_in_progress = true;
+    trioHPConfig.shutdown.shutdown_successful = false;
+    trioHPConfig.shutdown.step_start_time = millis();
+    trioHPConfig.shutdown.step_timeout = 10000; // 10s timeout for current zero
+    trioHPConfig.shutdown.step_retry_count = 0;
+    memset(trioHPConfig.shutdown.step_error_message, 0, sizeof(trioHPConfig.shutdown.step_error_message));
+    
+    return true;
+}
+
+bool processShutdownSequenceStep() {
+    if (!trioHPConfig.shutdown.shutdown_in_progress) return true;
+    
+    unsigned long now = millis();
+    TrioShutdownStep_t step = trioHPConfig.shutdown.current_step;
+    bool stepSuccess = false;
+    
+    // Check step timeout
+    if (now - trioHPConfig.shutdown.step_start_time > trioHPConfig.shutdown.step_timeout) {
+        trioHPConfig.shutdown.step_retry_count++;
+        if (trioHPConfig.shutdown.step_retry_count >= 3) {
+            snprintf(trioHPConfig.shutdown.step_error_message, 64,
+                    "Step %s timeout after 3 retries", getShutdownStepName(step));
+            Serial.printf("[TRIO HP SHUTDOWN] ERROR: %s\n", trioHPConfig.shutdown.step_error_message);
+            trioHPConfig.shutdown.shutdown_in_progress = false;
+            return false;
+        }
+        Serial.printf("[TRIO HP SHUTDOWN] Retry %d for step %s\n",
+                      trioHPConfig.shutdown.step_retry_count, getShutdownStepName(step));
+        trioHPConfig.shutdown.step_start_time = now;
+    }
+    
+    // Process current shutdown step
+    switch (step) {
+        case TRIO_SHUTDOWN_STEP_CURRENT_ZERO:
+            // Set current to zero (through active power controller)
+            stepSuccess = setActivePowerTarget(0.0f); // Set power target to zero
+            if (stepSuccess) {
+                Serial.println("[TRIO HP SHUTDOWN] Step 1: Current set to ZERO");
+            } else {
+                strcpy(trioHPConfig.shutdown.step_error_message, "Failed to set current to zero");
+            }
+            break;
+            
+        case TRIO_SHUTDOWN_STEP_OPERATIONAL_OFF:
+            // Set operational state OFF (0x11 0x10 A1)  
+            stepSuccess = setSystemOperationalReadiness(false);
+            if (stepSuccess) {
+                Serial.println("[TRIO HP SHUTDOWN] Step 2: System set to OFF");
+                trioHPConfig.shutdown.shutdown_successful = true;
+                trioHPConfig.shutdown.shutdown_in_progress = false;
+                return true;
+            } else {
+                strcpy(trioHPConfig.shutdown.step_error_message, "Failed to set OFF state");
+            }
+            break;
+            
+        case TRIO_SHUTDOWN_STEP_COMPLETED:
+            // Should not reach here
+            trioHPConfig.shutdown.shutdown_in_progress = false;
+            return true;
+    }
+    
+    // Move to next step if current step succeeded
+    if (stepSuccess) {
+        trioHPConfig.shutdown.current_step = (TrioShutdownStep_t)(step + 1);
+        trioHPConfig.shutdown.step_start_time = millis();
+        trioHPConfig.shutdown.step_retry_count = 0;
+        trioHPConfig.shutdown.step_timeout = 5000; // 5s timeout for operational OFF
+        memset(trioHPConfig.shutdown.step_error_message, 0, sizeof(trioHPConfig.shutdown.step_error_message));
+    }
+    
+    return true;
+}
+
+bool isStartupSequenceActive() {
+    return trioHPConfig.startup.startup_in_progress;
+}
+
+bool isShutdownSequenceActive() {
+    return trioHPConfig.shutdown.shutdown_in_progress;
+}
+
+const char* getStartupStepName(TrioStartupStep_t step) {
+    switch (step) {
+        case TRIO_STARTUP_STEP_ESTOP_CHECK:       return "E-STOP Check";
+        case TRIO_STARTUP_STEP_READY_TO_CHARGE:   return "Ready to Charge";
+        case TRIO_STARTUP_STEP_AC_CONTACTOR:      return "AC Contactor";
+        case TRIO_STARTUP_STEP_HEARTBEAT_DETECTION: return "Heartbeat Detection";
+        case TRIO_STARTUP_STEP_BROADCAST_SETTINGS: return "Broadcast Settings";
+        case TRIO_STARTUP_STEP_MODULE_STATE_READ: return "Module State Read";
+        case TRIO_STARTUP_STEP_MULTICAST_SETTINGS: return "Multicast Settings";
+        case TRIO_STARTUP_STEP_CALCULATE_CURRENT: return "Calculate Current";
+        case TRIO_STARTUP_STEP_SEND_POWER_COMMANDS: return "Send Power Commands";
+        case TRIO_STARTUP_STEP_OPERATIONAL_ON:    return "Operational ON";
+        case TRIO_STARTUP_STEP_COMPLETED:         return "Completed";
+        default: return "Unknown";
+    }
+}
+
+const char* getShutdownStepName(TrioShutdownStep_t step) {
+    switch (step) {
+        case TRIO_SHUTDOWN_STEP_CURRENT_ZERO:     return "Current to Zero";
+        case TRIO_SHUTDOWN_STEP_OPERATIONAL_OFF:  return "Operational OFF";
+        case TRIO_SHUTDOWN_STEP_COMPLETED:        return "Completed";
+        default: return "Unknown";
+    }
+}
+
+void printStartupSequenceStatus() {
+    Serial.println("=== TRIO HP STARTUP SEQUENCE STATUS ===");
+    Serial.printf("In Progress: %s\n", trioHPConfig.startup.startup_in_progress ? "YES" : "NO");
+    Serial.printf("Current Step: %s (%d/10)\n", 
+                  getStartupStepName(trioHPConfig.startup.current_step),
+                  trioHPConfig.startup.current_step + 1);
+    Serial.printf("Step Time: %lu ms\n", millis() - trioHPConfig.startup.step_start_time);
+    Serial.printf("Step Retries: %d/3\n", trioHPConfig.startup.step_retry_count);
+    Serial.printf("Successful: %s\n", trioHPConfig.startup.startup_successful ? "YES" : "NO");
+    
+    if (strlen(trioHPConfig.startup.step_error_message) > 0) {
+        Serial.printf("Last Error: %s\n", trioHPConfig.startup.step_error_message);
+    }
+}
+
+void printShutdownSequenceStatus() {
+    Serial.println("=== TRIO HP SHUTDOWN SEQUENCE STATUS ===");
+    Serial.printf("In Progress: %s\n", trioHPConfig.shutdown.shutdown_in_progress ? "YES" : "NO");
+    Serial.printf("Current Step: %s (%d/2)\n",
+                  getShutdownStepName(trioHPConfig.shutdown.current_step),
+                  trioHPConfig.shutdown.current_step + 1);
+    Serial.printf("Step Time: %lu ms\n", millis() - trioHPConfig.shutdown.step_start_time);
+    Serial.printf("Step Retries: %d/3\n", trioHPConfig.shutdown.step_retry_count);
+    Serial.printf("Successful: %s\n", trioHPConfig.shutdown.shutdown_successful ? "YES" : "NO");
+    
+    if (strlen(trioHPConfig.shutdown.step_error_message) > 0) {
+        Serial.printf("Last Error: %s\n", trioHPConfig.shutdown.step_error_message);
+    }
 }

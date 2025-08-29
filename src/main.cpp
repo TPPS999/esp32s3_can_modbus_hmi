@@ -64,6 +64,8 @@
 #include "trio_hp_manager.h"
 #include "trio_hp_monitor.h"
 #include "trio_hp_config.h"
+#include "trio_hp_limits.h"
+#include "trio_hp_controllers.h"
 
 // === SYSTEM STATE VARIABLES ===
 SystemState_t currentSystemState = SYSTEM_STATE_INIT;
@@ -94,6 +96,8 @@ void handleSystemState();
 void emergencyActions();
 void printStartupBanner();
 void printSystemStatus();
+bool setupTrioHPPhase3();
+void processTrioHPPhase3();
 
 // === CALLBACK FUNCTIONS ===
 void onWiFiStateChange(WiFiState_t oldState, WiFiState_t newState);
@@ -282,6 +286,16 @@ bool initializeModules() {
     success = false;
   }
   
+  // 7. Initialize TRIO HP Phase 3 (Safety, Controllers, Limits)
+  Serial.print("⚡ TRIO HP Phase 3... ");
+  if (setupTrioHPPhase3()) {
+    Serial.println("✅ OK");
+    Serial.println("   🛡️  Safety limits and controllers initialized");
+  } else {
+    Serial.println("❌ FAILED");
+    success = false;
+  }
+  
   // 4. Initialize Modbus TCP Server
   Serial.print("🔗 Modbus TCP Server... ");
   if (setupModbusTCP()) {
@@ -309,6 +323,7 @@ void processSystemLoop() {
   if (now - lastTrioHPCheck >= TRIO_HP_CHECK_INTERVAL_MS) {
     updateTrioHPManager();
     updateTrioHPMonitor();
+    processTrioHPPhase3(); // Process Phase 3 controllers and limits
     lastTrioHPCheck = now;
   }
   
@@ -543,4 +558,76 @@ void callWiFiManagerStartTriggeredAP() {
  */
 void callWiFiManagerStopTriggeredAP() {
   wifiManager.stopTriggeredAPMode();
+}
+
+// === TRIO HP PHASE 3 INTEGRATION FUNCTIONS ===
+
+bool setupTrioHPPhase3() {
+  Serial.println("🔧 Initializing TRIO HP Phase 3 systems...");
+  
+  // Initialize safety limits system
+  Serial.print("   🛡️  Safety Limits... ");
+  if (!initTrioHPLimits()) {
+    Serial.println("❌ FAILED");
+    return false;
+  }
+  Serial.println("✅ OK");
+  
+  // Initialize PID controllers  
+  Serial.print("   🎛️  PID Controllers... ");
+  if (!initTrioHPControllers()) {
+    Serial.println("❌ FAILED");
+    return false;
+  }
+  Serial.println("✅ OK");
+  
+  // Initialize efficiency monitoring
+  Serial.print("   📈 Efficiency Monitor... ");
+  if (!initTrioEfficiencyMonitor()) {
+    Serial.println("❌ FAILED");
+    return false;
+  }
+  Serial.println("✅ OK");
+  
+  // Verify configuration (already initialized in initializeModules)
+  Serial.print("   ⚙️  Configuration... ");
+  if (!isTrioHPConfigValid()) {
+    Serial.println("❌ FAILED");
+    return false;
+  }
+  Serial.println("✅ OK");
+  
+  Serial.println("✅ TRIO HP Phase 3 initialization completed");
+  Serial.println("   🛡️  BMS safety limits integrated");
+  Serial.println("   🎛️  Active & Reactive power controllers ready");
+  Serial.println("   📈 Efficiency monitoring active");
+  Serial.println("   🔒 Parameter locking system configured");
+  
+  return true;
+}
+
+void processTrioHPPhase3() {
+  static uint8_t currentBMSNode = 0;
+  
+  // Update BMS limits from rotating BMS nodes
+  currentBMSNode = (currentBMSNode + 1) % systemConfig.activeBmsNodes;
+  if (currentBMSNode < systemConfig.activeBmsNodes) {
+    uint8_t nodeId = systemConfig.bmsNodeIds[currentBMSNode];
+    updateBMSLimits(nodeId);
+  }
+  
+  // Update digital inputs (E-STOP + AC contactor) from all BMS
+  updateDigitalInputs();
+  
+  // Process PID controllers (they have internal timing - 3s intervals)
+  processTrioHPControllers();
+  
+  // Process startup/shutdown sequences if active
+  if (isStartupSequenceActive()) {
+    processStartupSequenceStep();
+  }
+  
+  if (isShutdownSequenceActive()) {
+    processShutdownSequenceStep();
+  }
 }

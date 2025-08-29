@@ -87,6 +87,10 @@ bool initTrioHPManager() {
     trioSystemStatus.systemStartTime = millis();
     trioSystemStatus.discoveryActive = true;
     
+    // Initialize system operational state (default to OFF)
+    trioSystemStatus.systemState = TRIO_SYSTEM_OFF;
+    trioSystemStatus.lastStateChangeTime = millis();
+    
     // Initialize command queue
     memset(commandQueue, 0, sizeof(commandQueue));
     
@@ -709,4 +713,119 @@ const TrioSystemStatus_t* getSystemStatus() {
 
 bool isValidModuleId(uint8_t moduleId) {
     return (moduleId < TRIO_HP_MAX_MODULES);
+}
+
+// === OPERATIONAL READINESS CONTROL FUNCTIONS ===
+
+bool setSystemOperationalReadiness(bool ready) {
+    if (!managerInitialized) {
+        Serial.println("[TRIO HP MANAGER] ERROR: Manager not initialized");
+        return false;
+    }
+    
+    TrioSystemState_t newState = ready ? TRIO_SYSTEM_OPERATIONAL : TRIO_SYSTEM_OFF;
+    TrioSystemState_t oldState = trioSystemStatus.systemState;
+    
+    // Update system state
+    trioSystemStatus.systemState = newState;
+    trioSystemStatus.lastStateChangeTime = millis();
+    
+    // Send appropriate CAN command based on new state
+    uint16_t command = 0x1110;  // System control command
+    uint8_t controlValue;
+    
+    if (ready) {
+        controlValue = 0xA0;  // OPERATIONAL state - 0x11 0x10 A0
+    } else {
+        controlValue = 0xA1;  // OFF state - 0x11 0x10 A1
+    }
+    
+    // Send broadcast command to all modules
+    bool success = sendBroadcastCommand(command, controlValue);
+    
+    if (success) {
+        Serial.printf("[TRIO HP MANAGER] System state changed: %s -> %s (command: 0x%04X 0x%02X)\n",
+                      oldState == TRIO_SYSTEM_OFF ? "OFF" : "OPERATIONAL",
+                      newState == TRIO_SYSTEM_OFF ? "OFF" : "OPERATIONAL",
+                      command, controlValue);
+    } else {
+        // Revert state change on command failure
+        trioSystemStatus.systemState = oldState;
+        Serial.printf("[TRIO HP MANAGER] ERROR: Failed to set system state to %s\n",
+                      ready ? "OPERATIONAL" : "OFF");
+        return false;
+    }
+    
+    return true;
+}
+
+bool canSendCommand(uint16_t command) {
+    if (!managerInitialized) {
+        Serial.println("[TRIO HP MANAGER] ERROR: Manager not initialized");
+        return false;
+    }
+    
+    TrioSystemState_t state = getCurrentSystemState();
+    
+    if (state == TRIO_SYSTEM_OFF) {
+        // ✅ CORRECTED LOGIC: OFF state = ALL commands allowed WITHOUT EXCEPTION
+        return true;
+    }
+    
+    if (state == TRIO_SYSTEM_OPERATIONAL) {
+        // OPERATIONAL state: ONLY operational commands allowed
+        switch (command) {
+            case 0x1002:  // System current command
+            case 0x2108:  // Reactive power command
+            case 0x2110:  // Work mode command
+            case 0x2117:  // Reactive type command
+                return true;
+            default:
+                Serial.printf("[TRIO HP MANAGER] Command 0x%04X not allowed in OPERATIONAL state\n", command);
+                return false;
+        }
+    }
+    
+    // Unknown state - default to not allowed
+    Serial.printf("[TRIO HP MANAGER] ERROR: Unknown system state: %d\n", (int)state);
+    return false;
+}
+
+bool isSystemOperational() {
+    if (!managerInitialized) return false;
+    return (trioSystemStatus.systemState == TRIO_SYSTEM_OPERATIONAL);
+}
+
+TrioSystemState_t getCurrentSystemState() {
+    if (!managerInitialized) return TRIO_SYSTEM_OFF;  // Safe default
+    return trioSystemStatus.systemState;
+}
+
+// === OPERATIONAL STATE UTILITY FUNCTIONS ===
+
+const char* getSystemStateName(TrioSystemState_t state) {
+    switch (state) {
+        case TRIO_SYSTEM_OFF:
+            return "OFF";
+        case TRIO_SYSTEM_OPERATIONAL:
+            return "OPERATIONAL";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+void printSystemOperationalStatus() {
+    Serial.println("=== TRIO HP SYSTEM OPERATIONAL STATUS ===");
+    Serial.printf("Current State: %s\n", getSystemStateName(getCurrentSystemState()));
+    Serial.printf("Last State Change: %lu ms ago\n", 
+                  millis() - trioSystemStatus.lastStateChangeTime);
+    Serial.printf("System Operational: %s\n", isSystemOperational() ? "YES" : "NO");
+    
+    // Test some common commands
+    uint16_t testCommands[] = {0x1002, 0x2108, 0x2110, 0x2117, 0x1110, 0x0000};
+    Serial.println("Command Permissions:");
+    for (int i = 0; i < 6; i++) {
+        Serial.printf("  0x%04X: %s\n", testCommands[i], 
+                      canSendCommand(testCommands[i]) ? "ALLOWED" : "BLOCKED");
+    }
 }

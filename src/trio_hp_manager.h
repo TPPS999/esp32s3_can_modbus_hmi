@@ -93,6 +93,12 @@ typedef enum {
     TRIO_WORK_MODE_DC_AC_ISLAND = 0xA2  // Off-grid inverter
 } TrioWorkMode_t;
 
+// === SYSTEM OPERATIONAL STATE ENUMERATION ===
+typedef enum {
+    TRIO_SYSTEM_OFF = 0,           // System OFF - 0x11 0x10 A1 (ALL commands allowed)
+    TRIO_SYSTEM_OPERATIONAL = 1    // System OPERATIONAL - 0x11 0x10 A0 (only operational commands allowed)
+} TrioSystemState_t;
+
 // === MODULE INFORMATION STRUCTURE ===
 typedef struct {
     uint8_t moduleId;                   // Module ID (0-47)
@@ -150,6 +156,10 @@ typedef struct {
     uint8_t systemHealth;               // Overall system health (%)
     bool discoveryActive;               // Discovery process active
     bool systemInitialized;             // System initialization complete
+    
+    // System operational state
+    TrioSystemState_t systemState;      // Current system operational state
+    unsigned long lastStateChangeTime;  // Last state change timestamp
     
 } TrioSystemStatus_t;
 
@@ -212,6 +222,46 @@ bool sendControlCommand(uint8_t moduleId, uint16_t command, uint8_t controlValue
 bool sendFloatCommand(uint8_t moduleId, uint16_t command, float value);
 bool sendBroadcastCommand(uint16_t command, uint32_t data);
 bool queueModuleCommand(uint8_t moduleId, uint16_t command, uint32_t data, bool isControl);
+
+// === OPERATIONAL READINESS CONTROL FUNCTIONS ===
+
+/**
+ * @brief Set system operational readiness state
+ * @param ready true for OPERATIONAL state (0x11 0x10 A0), false for OFF state (0x11 0x10 A1)
+ * @return true if state set successfully, false otherwise
+ */
+bool setSystemOperationalReadiness(bool ready);
+
+/**
+ * @brief Check if a command is allowed in current system state
+ * @param command Command code to validate
+ * @return true if command allowed in current state, false otherwise
+ */
+bool canSendCommand(uint16_t command);
+
+/**
+ * @brief Check if system is in operational state
+ * @return true if system operational, false if off
+ */
+bool isSystemOperational();
+
+/**
+ * @brief Get current system operational state
+ * @return Current system state (OFF or OPERATIONAL)
+ */
+TrioSystemState_t getCurrentSystemState();
+
+/**
+ * @brief Get system state name as string
+ * @param state System state enum value
+ * @return String name of the state
+ */
+const char* getSystemStateName(TrioSystemState_t state);
+
+/**
+ * @brief Print comprehensive system operational status to Serial
+ */
+void printSystemOperationalStatus();
 
 // === RESPONSE PROCESSING FUNCTIONS ===
 bool processModuleResponse(uint32_t canId, const uint8_t* data, uint8_t length);
