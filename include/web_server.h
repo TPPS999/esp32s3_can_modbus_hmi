@@ -79,6 +79,12 @@ private:
   String generateCANMonitorPage();
   String generateSystemStatusPage();
   
+  // TRIO HP page generators
+  String generateTrioHPDashboardPage();
+  String generateTrioHPConfigPage();
+  String generateTrioHPEfficiencyPage();
+  String generateTrioHPDataJSON();
+  
   // Request handlers
   void handleRoot(AsyncWebServerRequest *request);
   void handleWiFiConfig(AsyncWebServerRequest *request);
@@ -93,6 +99,13 @@ private:
   void handleConfigImport(AsyncWebServerRequest *request);
   void handleRestart(AsyncWebServerRequest *request);
   void handleNotFound(AsyncWebServerRequest *request);
+  
+  // TRIO HP handlers
+  void handleTrioHPDashboard(AsyncWebServerRequest *request);
+  void handleTrioHPConfig(AsyncWebServerRequest *request);
+  void handleTrioHPConfigSave(AsyncWebServerRequest *request);
+  void handleTrioHPAPI(AsyncWebServerRequest *request);
+  void handleTrioHPEfficiency(AsyncWebServerRequest *request);
   
   // Utility functions
   String getContentType(String filename);

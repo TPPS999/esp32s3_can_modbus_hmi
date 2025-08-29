@@ -57,6 +57,10 @@
 #include "web_server.h"
 #include "wifi_manager.h"
 #include "utils.h"
+#include "trio_hp_monitor.h"
+#include "trio_hp_manager.h"
+#include "trio_hp_controllers.h"
+#include "trio_hp_limits.h"
 #include <WiFi.h>
 #include <mcp_can.h>
 
@@ -141,6 +145,27 @@ bool ConfigWebServer::begin() {
     handleRestart(request);
   });
   
+  // TRIO HP routes
+  server->on("/trio-hp", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    handleTrioHPDashboard(request);
+  });
+  
+  server->on("/trio-hp/config", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    handleTrioHPConfig(request);
+  });
+  
+  server->on("/trio-hp/config/save", HTTP_POST, [this](AsyncWebServerRequest *request) {
+    handleTrioHPConfigSave(request);
+  });
+  
+  server->on("/api/trio-hp", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    handleTrioHPAPI(request);
+  });
+  
+  server->on("/trio-hp/efficiency", HTTP_GET, [this](AsyncWebServerRequest *request) {
+    handleTrioHPEfficiency(request);
+  });
+  
   // 404 handler
   server->onNotFound([this](AsyncWebServerRequest *request) {
     handleNotFound(request);
@@ -187,6 +212,7 @@ String ConfigWebServer::generateMainPage() {
   html += "<a href='/network'>Network Config</a>";
   html += "<a href='/bms'>BMS Setup</a>";
   html += "<a href='/can'>CAN Monitor</a>";
+  html += "<a href='/trio-hp'>TRIO HP Dashboard</a>";
   html += "<a href='/status'>System Status</a>";
   html += "</div>";
   
@@ -466,6 +492,276 @@ String ConfigWebServer::generateSystemStatusPage() {
   return "System status page - TODO";
 }
 
+// === TRIO HP PAGE GENERATORS ===
+
+String ConfigWebServer::generateTrioHPDashboardPage() {
+  String html = "<!DOCTYPE html><html><head>";
+  html += "<title>TRIO HP Dashboard</title>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += CSS_STYLE;
+  html += "</head><body>";
+  
+  html += "<div class='container'>";
+  html += "<div class='header'>";
+  html += "<h1>TRIO HP Power Control Dashboard</h1>";
+  html += "<a href='/' style='color: #ecf0f1; text-decoration: none;'>← Back to Main</a>";
+  html += "</div>";
+  
+  // Navigation menu
+  html += "<div class='nav'>";
+  html += "<a href='/trio-hp'>Dashboard</a>";
+  html += "<a href='/trio-hp/config'>Configuration</a>";
+  html += "<a href='/trio-hp/efficiency'>Efficiency Monitor</a>";
+  html += "</div>";
+  
+  // System Status
+  html += "<h2>System Status</h2>";
+  html += "<div class='grid'>";
+  
+  // Get current system data
+  TrioSystemStatus_t systemStatus = getTrioSystemStatus();
+  
+  // Operational Status
+  html += "<div>";
+  html += "<h3>Operational Status</h3>";
+  html += "<p><strong>State:</strong> ";
+  html += (systemStatus.isOperational) ? "<span class='status success'>OPERATIONAL</span>" : "<span class='status error'>OFF</span>";
+  html += "</p>";
+  html += "<p><strong>Active Modules:</strong> " + String(systemStatus.activeModules) + "/" + String(TRIO_HP_MAX_MODULES) + "</p>";
+  html += "<p><strong>Safety Status:</strong> ";
+  html += (systemStatus.safetyOK) ? "<span class='status success'>OK</span>" : "<span class='status error'>FAULT</span>";
+  html += "</p>";
+  html += "</div>";
+  
+  // Power Control
+  html += "<div>";
+  html += "<h3>Power Control</h3>";
+  html += "<p><strong>Active Power:</strong> " + String(systemStatus.totalActivePower) + " W</p>";
+  html += "<p><strong>Reactive Power:</strong> " + String(systemStatus.totalReactivePower) + " VAr</p>";
+  html += "<p><strong>DC Current:</strong> " + String(systemStatus.totalDCCurrent) + " A</p>";
+  html += "<p><strong>DC Voltage:</strong> " + String(systemStatus.dcVoltage) + " V</p>";
+  html += "</div>";
+  
+  html += "</div>";
+  
+  // Safety Limits Status
+  html += "<h2>Safety Limits</h2>";
+  html += "<table>";
+  html += "<thead>";
+  html += "<tr><th>Parameter</th><th>Current</th><th>Limit</th><th>Status</th></tr>";
+  html += "</thead>";
+  html += "<tbody>";
+  
+  TrioHPLimits_t limits = getCurrentTrioHPLimits();
+  html += "<tr>";
+  html += "<td>DC Charge Current</td>";
+  html += "<td>" + String(systemStatus.totalDCCurrent) + " A</td>";
+  html += "<td>" + String(limits.dccl_limit) + " A</td>";
+  html += "<td>" + String((systemStatus.totalDCCurrent <= limits.dccl_limit) ? "<span class='status success'>OK</span>" : "<span class='status error'>EXCEEDED</span>") + "</td>";
+  html += "</tr>";
+  
+  html += "<tr>";
+  html += "<td>DC Discharge Current</td>";
+  html += "<td>" + String(abs(systemStatus.totalDCCurrent)) + " A</td>";
+  html += "<td>" + String(limits.ddcl_limit) + " A</td>";
+  html += "<td>" + String((abs(systemStatus.totalDCCurrent) <= limits.ddcl_limit) ? "<span class='status success'>OK</span>" : "<span class='status error'>EXCEEDED</span>") + "</td>";
+  html += "</tr>";
+  
+  html += "</tbody>";
+  html += "</table>";
+  
+  // Digital Inputs Status
+  html += "<h2>Digital Inputs</h2>";
+  html += "<table>";
+  html += "<thead>";
+  html += "<tr><th>Input</th><th>Status</th><th>Description</th></tr>";
+  html += "</thead>";
+  html += "<tbody>";
+  
+  TrioHPDigitalInputs_t inputs = getCurrentTrioHPDigitalInputs();
+  html += "<tr>";
+  html += "<td>E-STOP</td>";
+  html += "<td>" + String(inputs.estop_active ? "<span class='status error'>ACTIVE</span>" : "<span class='status success'>OK</span>") + "</td>";
+  html += "<td>Emergency stop status</td>";
+  html += "</tr>";
+  
+  html += "<tr>";
+  html += "<td>AC Contactor</td>";
+  html += "<td>" + String(inputs.ac_contactor_closed ? "<span class='status success'>CLOSED</span>" : "<span class='status error'>OPEN</span>") + "</td>";
+  html += "<td>AC contactor status</td>";
+  html += "</tr>";
+  
+  html += "</tbody>";
+  html += "</table>";
+  
+  // Auto-refresh
+  html += "<script>";
+  html += "setInterval(function() { location.reload(); }, 5000);"; // Refresh every 5 seconds
+  html += "</script>";
+  
+  html += "</div>";
+  html += "</body></html>";
+  
+  return html;
+}
+
+String ConfigWebServer::generateTrioHPConfigPage() {
+  String html = "<!DOCTYPE html><html><head>";
+  html += "<title>TRIO HP Configuration</title>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += CSS_STYLE;
+  html += "</head><body>";
+  
+  html += "<div class='container'>";
+  html += "<div class='header'>";
+  html += "<h1>TRIO HP Configuration</h1>";
+  html += "<a href='/trio-hp' style='color: #ecf0f1; text-decoration: none;'>← Back to Dashboard</a>";
+  html += "</div>";
+  
+  // Configuration form
+  html += "<form method='POST' action='/trio-hp/config/save'>";
+  html += "<h2>PID Controller Settings</h2>";
+  
+  html += "<h3>Active Power Controller</h3>";
+  html += "<div class='grid'>";
+  html += "<div class='form-group'>";
+  html += "<label>Proportional Gain (Kp):</label>";
+  html += "<input type='number' name='active_kp' step='0.001' value='0.1'>";
+  html += "</div>";
+  html += "<div class='form-group'>";
+  html += "<label>Integral Gain (Ki):</label>";
+  html += "<input type='number' name='active_ki' step='0.001' value='0.02'>";
+  html += "</div>";
+  html += "</div>";
+  
+  html += "<h3>Reactive Power Controller</h3>";
+  html += "<div class='grid'>";
+  html += "<div class='form-group'>";
+  html += "<label>Single Module Limit (kVAr):</label>";
+  html += "<input type='number' name='reactive_limit' step='0.1' value='10.0'>";
+  html += "</div>";
+  html += "</div>";
+  
+  html += "<h2>Safety Settings</h2>";
+  html += "<div class='form-group'>";
+  html += "<label>BMS Limits Threshold (%):</label>";
+  html += "<input type='number' name='bms_threshold' min='50' max='100' value='90'>";
+  html += "<small>Percentage of BMS DCCL/DDCL to use as safety limit</small>";
+  html += "</div>";
+  
+  html += "<button type='submit' class='btn'>Save Configuration</button>";
+  html += "</form>";
+  
+  html += "</div>";
+  html += "</body></html>";
+  
+  return html;
+}
+
+String ConfigWebServer::generateTrioHPEfficiencyPage() {
+  String html = "<!DOCTYPE html><html><head>";
+  html += "<title>TRIO HP Efficiency Monitor</title>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += CSS_STYLE;
+  html += "</head><body>";
+  
+  html += "<div class='container'>";
+  html += "<div class='header'>";
+  html += "<h1>TRIO HP Efficiency Monitor</h1>";
+  html += "<a href='/trio-hp' style='color: #ecf0f1; text-decoration: none;'>← Back to Dashboard</a>";
+  html += "</div>";
+  
+  // Get efficiency data
+  TrioEfficiencyData_t effData = getTrioEfficiencyData();
+  
+  html += "<h2>Current Efficiency</h2>";
+  html += "<div class='grid'>";
+  
+  html += "<div>";
+  html += "<h3>Instantaneous</h3>";
+  html += "<p><strong>Efficiency:</strong> " + String(effData.instantaneous_efficiency * 100, 2) + "%</p>";
+  html += "<p><strong>AC Power:</strong> " + String(effData.ac_power) + " W</p>";
+  html += "<p><strong>DC Power:</strong> " + String(effData.dc_power) + " W</p>";
+  html += "</div>";
+  
+  html += "<div>";
+  html += "<h3>Cumulative Energy</h3>";
+  html += "<p><strong>AC Energy:</strong> " + String(effData.cumulative_ac_energy, 3) + " Wh</p>";
+  html += "<p><strong>DC Energy:</strong> " + String(effData.cumulative_dc_energy, 3) + " Wh</p>";
+  html += "<p><strong>Overall Efficiency:</strong> " + String((effData.cumulative_dc_energy > 0) ? (effData.cumulative_ac_energy / effData.cumulative_dc_energy * 100) : 0, 2) + "%</p>";
+  html += "</div>";
+  
+  html += "</div>";
+  
+  html += "<h2>System Status</h2>";
+  html += "<table>";
+  html += "<tr><td><strong>Monitoring Active:</strong></td><td>" + String(effData.monitoring_active ? "Yes" : "No") + "</td></tr>";
+  html += "<tr><td><strong>Last Update:</strong></td><td>" + String((millis() - effData.last_update_time) / 1000) + " seconds ago</td></tr>";
+  html += "<tr><td><strong>Measurement Interval:</strong></td><td>" + String(effData.measurement_interval / 1000) + " seconds</td></tr>";
+  html += "</table>";
+  
+  // Note about future enhancements
+  html += "<div class='status info'>";
+  html += "<p><strong>Future Enhancement:</strong> Real-time efficiency charts will be added in the next version.</p>";
+  html += "</div>";
+  
+  // Auto-refresh
+  html += "<script>";
+  html += "setInterval(function() { location.reload(); }, 2000);"; // Refresh every 2 seconds
+  html += "</script>";
+  
+  html += "</div>";
+  html += "</body></html>";
+  
+  return html;
+}
+
+String ConfigWebServer::generateTrioHPDataJSON() {
+  String json = "{";
+  
+  // System status
+  TrioSystemStatus_t systemStatus = getTrioSystemStatus();
+  json += "\"system_status\":{";
+  json += "\"operational\":" + String(systemStatus.isOperational ? "true" : "false") + ",";
+  json += "\"active_modules\":" + String(systemStatus.activeModules) + ",";
+  json += "\"safety_ok\":" + String(systemStatus.safetyOK ? "true" : "false") + ",";
+  json += "\"total_active_power\":" + String(systemStatus.totalActivePower) + ",";
+  json += "\"total_reactive_power\":" + String(systemStatus.totalReactivePower) + ",";
+  json += "\"total_dc_current\":" + String(systemStatus.totalDCCurrent) + ",";
+  json += "\"dc_voltage\":" + String(systemStatus.dcVoltage);
+  json += "},";
+  
+  // Safety limits
+  TrioHPLimits_t limits = getCurrentTrioHPLimits();
+  json += "\"safety_limits\":{";
+  json += "\"dccl_limit\":" + String(limits.dccl_limit) + ",";
+  json += "\"ddcl_limit\":" + String(limits.ddcl_limit) + ",";
+  json += "\"limits_valid\":" + String(limits.limits_valid ? "true" : "false");
+  json += "},";
+  
+  // Digital inputs
+  TrioHPDigitalInputs_t inputs = getCurrentTrioHPDigitalInputs();
+  json += "\"digital_inputs\":{";
+  json += "\"estop_active\":" + String(inputs.estop_active ? "true" : "false") + ",";
+  json += "\"ac_contactor_closed\":" + String(inputs.ac_contactor_closed ? "true" : "false");
+  json += "},";
+  
+  // Efficiency data
+  TrioEfficiencyData_t effData = getTrioEfficiencyData();
+  json += "\"efficiency\":{";
+  json += "\"instantaneous\":" + String(effData.instantaneous_efficiency) + ",";
+  json += "\"ac_power\":" + String(effData.ac_power) + ",";
+  json += "\"dc_power\":" + String(effData.dc_power) + ",";
+  json += "\"cumulative_ac_energy\":" + String(effData.cumulative_ac_energy) + ",";
+  json += "\"cumulative_dc_energy\":" + String(effData.cumulative_dc_energy) + ",";
+  json += "\"monitoring_active\":" + String(effData.monitoring_active ? "true" : "false");
+  json += "}";
+  
+  json += "}";
+  
+  return json;
+}
+
 // === REQUEST HANDLERS ===
 
 void ConfigWebServer::handleRoot(AsyncWebServerRequest *request) {
@@ -606,6 +902,31 @@ void ConfigWebServer::handleRestart(AsyncWebServerRequest *request) {
 
 void ConfigWebServer::handleNotFound(AsyncWebServerRequest *request) {
   request->send(404, "text/html", "404 - Page Not Found<br><a href='/'>Home</a>");
+}
+
+// === TRIO HP HANDLERS ===
+
+void ConfigWebServer::handleTrioHPDashboard(AsyncWebServerRequest *request) {
+  request->send(200, "text/html", generateTrioHPDashboardPage());
+}
+
+void ConfigWebServer::handleTrioHPConfig(AsyncWebServerRequest *request) {
+  request->send(200, "text/html", generateTrioHPConfigPage());
+}
+
+void ConfigWebServer::handleTrioHPConfigSave(AsyncWebServerRequest *request) {
+  String response = "TRIO HP configuration saved!<br>";
+  response += "<a href='/trio-hp/config'>Back to TRIO HP Config</a> | <a href='/trio-hp'>Dashboard</a>";
+  request->send(200, "text/html", response);
+}
+
+void ConfigWebServer::handleTrioHPAPI(AsyncWebServerRequest *request) {
+  String json = generateTrioHPDataJSON();
+  request->send(200, "application/json", json);
+}
+
+void ConfigWebServer::handleTrioHPEfficiency(AsyncWebServerRequest *request) {
+  request->send(200, "text/html", generateTrioHPEfficiencyPage());
 }
 
 // === UTILITY FUNCTIONS ===

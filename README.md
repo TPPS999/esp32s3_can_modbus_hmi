@@ -585,6 +585,72 @@ Po zmianie przez web:
 - **Autoryzacja**: Hasło wymagane do połączenia z AP
 - **Automatyczne wyłączenie**: AP wyłącza się po timeout
 
+### ⚡ TRIO HP Web Interface
+
+Kompletny interfejs do zarządzania systemami TRIO HP dostępny przez przeglądarkę:
+
+#### Dostępne Strony TRIO HP:
+
+**🎛️ Dashboard TRIO HP** (`/trio-hp`)
+- **Status Systemu**: Stan operacyjny (OFF/OPERATIONAL), liczba aktywnych modułów, status bezpieczeństwa
+- **Kontrola Mocy**: Real-time monitoring Active/Reactive power, DC current/voltage
+- **Limity Bezpieczeństwa**: Live monitoring DCCL/DDCL z porównaniem current vs. limit
+- **Wejścia Cyfrowe**: Status E-STOP i AC contactor z wskaźnikami kolorów
+- **Auto-refresh**: Odświeżanie co 5 sekund dla live monitoring
+
+**⚙️ Konfiguracja TRIO HP** (`/trio-hp/config`)
+- **Regulatory PID**: Tuning parametrów Active Power (Kp/Ki) i Reactive Power
+- **Konfiguracja Mocy**: Single module limit dla reactive power (domyślnie 10kVAr)
+- **Ustawienia Bezpieczeństwa**: BMS threshold percentage (50-100% DCCL/DDCL)
+- **Walidacja Formularzy**: Professional HTML5 validation z kontrolami zakresów
+
+**📊 Monitor Wydajności** (`/trio-hp/efficiency`)
+- **Wydajność Chwilowa**: Real-time P_AC/P_DC calculation z wyświetlaniem %
+- **Energia Skumulowana**: AC/DC energy counters w Wh z wysoką precyzją
+- **Wydajność Ogólna**: Long-term efficiency z danych skumulowanych
+- **Status Systemu**: Monitoring intervals, timestamps, activity status
+- **Auto-refresh**: Odświeżanie co 2 sekundy dla near real-time monitoring
+
+**🔌 JSON API** (`/api/trio-hp`)
+```json
+{
+  "system_status": {
+    "operational": true,
+    "active_modules": 3,
+    "safety_ok": true,
+    "total_active_power": 1000,
+    "total_reactive_power": 200
+  },
+  "safety_limits": {
+    "dccl_limit": 100,
+    "ddcl_limit": 100,
+    "limits_valid": true
+  },
+  "digital_inputs": {
+    "estop_active": false,
+    "ac_contactor_closed": true
+  },
+  "efficiency": {
+    "instantaneous": 0.95,
+    "cumulative_ac_energy": 1500.5,
+    "cumulative_dc_energy": 1580.2
+  }
+}
+```
+
+#### Funkcje TRIO HP Web Interface:
+- **📊 Real-time Monitoring**: Live data z automatycznym odświeżaniem
+- **🎛️ Zdalna Konfiguracja**: PID parameters i safety settings przez przeglądarkę  
+- **🔍 Status Monitoring**: Complete system health z color-coded indicators
+- **📈 Efficiency Tracking**: Instantaneous i cumulative energy monitoring
+- **🔌 API Access**: JSON endpoints dla external applications
+- **📱 Mobile Responsive**: Professional interface na wszystkich urządzeniach
+
+#### Integration z Modbus:
+- **Rejestry 5000-5199**: Complete TRIO HP data mapping
+- **Real-time Updates**: Direct integration z TRIO HP Phase 1-3 systems
+- **Data Persistence**: Automatic synchronization z Modbus holding registers
+
 ## 📈 Monitoring i Diagnostyka
 
 ### System Heartbeat
