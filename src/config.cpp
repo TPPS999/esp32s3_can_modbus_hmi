@@ -160,7 +160,7 @@ void setDefaultConfiguration() {
   
   // 🔥 TESTOWA KONFIGURACJA BMS - POJEDYNCZA BATERIA
   systemConfig.activeBmsNodes = 1;        // Tylko 1 bateria
-  systemConfig.bmsNodeIds[0] = 19;        // Node ID = 19
+  systemConfig.bmsNodeIds[0] = 26;        // Node ID = 26
   
   // 🔥 CAN 125 kbps dla stabilności  
   systemConfig.canSpeed = CAN_125KBPS;    // 125 kbps

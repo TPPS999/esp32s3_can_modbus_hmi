@@ -456,6 +456,33 @@ bool initializeCAN() {
   
   canInitialized = false;
   
+  // 🔥 Initialize SPI first (like in working code)
+  DEBUG_PRINTF("🔧 Configuring SPI pins for CAN Expansion Board...\n");
+  DEBUG_PRINTF("   MOSI: GPIO%d\n", SPI_MOSI_PIN);
+  DEBUG_PRINTF("   MISO: GPIO%d\n", SPI_MISO_PIN);
+  DEBUG_PRINTF("   SCK:  GPIO%d\n", SPI_SCK_PIN);
+  DEBUG_PRINTF("   CS:   GPIO%d\n", CAN_CS_PIN);
+  
+  SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, CAN_CS_PIN);
+  delay(100);
+  
+  SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+  SPI.endTransaction();
+  
+  DEBUG_PRINTF("✅ SPI pins configured\n");
+  
+  // 🔥 CS Pin manipulation (like in working code)
+  DEBUG_PRINTF("📍 CS Pin: GPIO%d\n", CAN_CS_PIN);
+  
+  pinMode(CAN_CS_PIN, OUTPUT);
+  digitalWrite(CAN_CS_PIN, HIGH);
+  delay(10);
+  digitalWrite(CAN_CS_PIN, LOW);
+  delay(10);
+  digitalWrite(CAN_CS_PIN, HIGH);
+  
+  DEBUG_PRINTF("✅ CS pin control OK\n");
+  
   // Create CAN controller instance if not exists
   if (!canController) {
     canController = new MCP_CAN(CAN_CS_PIN);
@@ -491,15 +518,30 @@ bool initializeMCP2515() {
     return false;
   }
   
+  DEBUG_PRINTF("🔄 Initializing CAN at 125 kbps (fixed)...\n");
+  
+  // 🔥 Additional CS pin manipulation before begin (like in working code)
+  digitalWrite(CAN_CS_PIN, LOW);
+  delay(10);
+  digitalWrite(CAN_CS_PIN, HIGH);
+  delay(100);
+  
   // Initialize MCP2515 with 125kbps (compatible with BMS)
   if (canController->begin(CAN_125KBPS) != CAN_OK) {
-    DEBUG_PRINTF("❌ MCP2515 initialization failed\n");
+    DEBUG_PRINTF("❌ MCP2515 initialization failed at 125 kbps!\n");
     return false;
   }
   
-  DEBUG_PRINTF("✅ MCP2515 initialized successfully at 125kbps\n");
+  DEBUG_PRINTF("✅ CAN initialized at 125 kbps (fixed)\n");
+  DEBUG_PRINTF("📋 CAN controller ready at 125 kbps\n");
   
-  DEBUG_PRINTF("✅ MCP2515 initialized: 125kbps, normal mode\n");
+  // Print monitoring info like in working code
+  DEBUG_PRINTF("🎯 Monitoring BMS Node IDs: ");
+  for (int i = 0; i < systemConfig.activeBmsNodes; i++) {
+    DEBUG_PRINTF("%d(0x%X) ", systemConfig.bmsNodeIds[i], systemConfig.bmsNodeIds[i]);
+  }
+  DEBUG_PRINTF("\n");
+  
   return true;
 }
 

@@ -61,6 +61,7 @@
 #include "bms_data.h"
 #include "bms_protocol.h"  // 🔥 ZAWIERA: setupCAN, processCAN, isCANHealthy + parsery
 #include "utils.h"
+#include "web_server.h"
 #include "trio_hp_manager.h"
 #include "trio_hp_monitor.h"
 #include "trio_hp_config.h"
@@ -303,6 +304,17 @@ bool initializeModules() {
     Serial.printf("   🎯 Server running on port %d\n", MODBUS_TCP_PORT);
     Serial.printf("   📊 %d holding registers available\n", MODBUS_MAX_HOLDING_REGISTERS);
     Serial.printf("   🔋 %d BMS modules x 200 registers each\n", MAX_BMS_NODES);
+  } else {
+    Serial.println("❌ FAILED");
+    success = false;
+  }
+  
+  // 8. Initialize Web Server
+  Serial.print("🌐 Web Server... ");
+  if (configWebServer.begin()) {
+    Serial.println("✅ OK");
+    Serial.printf("   🌐 Web server running on port %d\n", WEB_SERVER_PORT);
+    Serial.println("   📋 Configuration interface available");
   } else {
     Serial.println("❌ FAILED");
     success = false;
