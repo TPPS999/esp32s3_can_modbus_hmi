@@ -336,7 +336,7 @@ void handleWriteMultipleRegisters(WiFiClient& client, uint8_t* request, int requ
 void sendModbusResponse(WiFiClient& client, uint8_t* response, int length) {
   if (client.connected()) {
     client.write(response, length);
-    client.clear();
+    client.flush();
     modbusStats.totalResponses++;
     modbusStats.bytesSent += length;
     

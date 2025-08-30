@@ -346,3 +346,20 @@ User słusznie zwrócił uwagę że zapomniałem o kluczowej części workflow -
 - **✅ GIT COMMIT:** 6eb200e - "docs: restore workflow compliance - update conversation log"
 - **✅ WORKFLOW:** Przywrócenie pełnej compliance z workflow dla cross-machine compatibility
 - **🎯 REZULTAT:** Workflow w 100% zgodny i gotowy na innych maszynach
+
+---
+
+## 2025-08-30 14:45 (Warszawa) - Cross-Platform Compilation Fix
+
+**👤 User napisał:**
+"THINK HARD THROUGH THIS STEP BY STEP: na innym kompie mam taki problem w kompilacji [compilation error details]"
+
+**🤖 Jak zrozumiałem:**
+User zgłosił błąd kompilacji na innym komputerze: "'class WiFiClient' has no member named 'clear'" w src/modbus_tcp.cpp:339. Problem z kompatybilnością cross-platform - różne wersje ESP32 Arduino framework nie mają metody WiFiClient.clear().
+
+**📋 Lista operacji wykonanych:**
+- **✅ ANALIZA:** modbus_tcp.cpp linia 339 - zidentyfikowany WiFiClient.clear() w sendModbusResponse()
+- **✅ NAPRAWA:** Zamiana client.clear() na client.flush() dla cross-platform compatibility  
+- **✅ FIX:** client.flush() jest widely supported i służy temu samemu celowi (immediate data send)
+- **✅ AKTUALIZACJA:** CONVERSATION_LOG.md z obecną sesją zgodnie z workflow
+- **🎯 REZULTAT:** Cross-platform compilation issue resolved - system powinien kompilować się na wszystkich maszynach
