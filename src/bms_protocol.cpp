@@ -586,6 +586,26 @@ void processCAN() {
  * @brief Główna funkcja przetwarzania ramek CAN
  */
 void parseCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
+  // 🔍 CAN FRAME DEBUG MONITOR - Show all incoming frames
+  DEBUG_PRINTF("📥 CAN RX: ID=0x%03lX Len=%d Data=[", canId, len);
+  for (int i = 0; i < len; i++) {
+    DEBUG_PRINTF("%02X", buf[i]);
+    if (i < len - 1) DEBUG_PRINT(" ");
+  }
+  DEBUG_PRINTF("] Type=");
+  
+  // Show expected Node ID for each frame type
+  if ((canId & 0xFF80) == CAN_FRAME_190_BASE) {
+    DEBUG_PRINTF("190 NodeID=%d", canId - CAN_FRAME_190_BASE + 1);
+  } else if ((canId & 0xFF80) == CAN_FRAME_290_BASE) {
+    DEBUG_PRINTF("290 NodeID=%d", canId - CAN_FRAME_290_BASE + 1);
+  } else if ((canId & 0xFF80) == CAN_FRAME_710_BASE) {
+    DEBUG_PRINTF("710 NodeID=%d", canId - CAN_FRAME_710_BASE + 1);
+  } else {
+    DEBUG_PRINTF("UNKNOWN");
+  }
+  DEBUG_PRINTF("\n");
+
   // 🔥 PRIORYTET 1: Sprawdź czy to ramka wyzwalacza AP (najwyższy priorytet)
   if (processAPTriggerFrame(canId, len, buf)) {
     // Ramka została przetworzona jako wyzwalacz AP
@@ -626,6 +646,14 @@ void parseCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
   } else if ((canId & 0xFF80) == CAN_FRAME_710_BASE) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_710_BASE);
     if (nodeId > 0) parseBMSFrame710(nodeId, buf);
+  } else {
+    // 🚨 UNRECOGNIZED FRAME - This might be the missing Node 26 frames!
+    DEBUG_PRINTF("🚨 UNRECOGNIZED CAN Frame: ID=0x%03lX (Base would be 0x%03lX)\n", canId, canId & 0xFF80);
+    DEBUG_PRINTF("   🔍 For Node 26 we expect:\n");
+    DEBUG_PRINTF("     Frame 190: 0x%03X (current base: 0x%03X)\n", 0x181 + 26 - 1, CAN_FRAME_190_BASE);
+    DEBUG_PRINTF("     Frame 290: 0x%03X (current base: 0x%03X)\n", 0x281 + 26 - 1, CAN_FRAME_290_BASE);
+    DEBUG_PRINTF("     Frame 710: 0x%03X (current base: 0x%03X)\n", 0x701 + 26 - 1, CAN_FRAME_710_BASE);
+    protocolStats.unknownFrameCount++;
   }
 }
 
@@ -633,7 +661,7 @@ void parseCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
  * @brief Wyciągnij Node ID z CAN ID
  */
 uint8_t extractNodeId(unsigned long canId, uint16_t baseId) {
-  uint8_t nodeId = canId - baseId;
+  uint8_t nodeId = canId - baseId + 1;  // 🔥 Fix: Node ID = (CAN_ID - BASE) + 1
   
   // Validate node ID is in our configured list
   for (int i = 0; i < systemConfig.activeBmsNodes; i++) {

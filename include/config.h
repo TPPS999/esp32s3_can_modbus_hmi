@@ -108,16 +108,16 @@
 #define BMS_COMMUNICATION_TIMEOUT_MS 30000
 
 // === VALIDATION MACROS ===
-#define IS_VALID_BMS_NODE_ID(id) ((id) >= 1 && (id) <= 16)
-#define IS_VALID_BMS_CAN_ID(canId) (((canId) >= 0x181 && (canId) <= 0x190) || \
-                                   ((canId) >= 0x281 && (canId) <= 0x290) || \
-                                   ((canId) >= 0x301 && (canId) <= 0x310) || \
-                                   ((canId) >= 0x381 && (canId) <= 0x390) || \
-                                   ((canId) >= 0x401 && (canId) <= 0x410) || \
-                                   ((canId) >= 0x501 && (canId) <= 0x510) || \
-                                   ((canId) >= 0x481 && (canId) <= 0x490) || \
-                                   ((canId) >= 0x1A1 && (canId) <= 0x1B0) || \
-                                   ((canId) >= 0x701 && (canId) <= 0x710))
+#define IS_VALID_BMS_NODE_ID(id) ((id) >= 1 && (id) <= 30)
+#define IS_VALID_BMS_CAN_ID(canId) (((canId) >= 0x181 && (canId) <= 0x200) || \
+                                   ((canId) >= 0x281 && (canId) <= 0x300) || \
+                                   ((canId) >= 0x301 && (canId) <= 0x320) || \
+                                   ((canId) >= 0x381 && (canId) <= 0x400) || \
+                                   ((canId) >= 0x401 && (canId) <= 0x420) || \
+                                   ((canId) >= 0x501 && (canId) <= 0x520) || \
+                                   ((canId) >= 0x481 && (canId) <= 0x500) || \
+                                   ((canId) >= 0x1A1 && (canId) <= 0x220) || \
+                                   ((canId) >= 0x701 && (canId) <= 0x720))
 
 // === NETWORK CONFIGURATION ===
 const char* const WIFI_SSID = "WNK3";

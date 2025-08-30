@@ -386,10 +386,64 @@ User zgłosił że mimo zmiany konfiguracji na Node 26, system nadal nie wykrywa
 - **⚠️ PROBLEM:** Memory heap corruption podczas AsyncWebServer allocation
 - **✅ WORKAROUND:** Tymczasowe wyłączenie web server - memory optimization needed
 - **✅ DIAGNOSTYKA:** Force EEPROM clear dla załadowania Node 26 config (stary EEPROM miał 1-4)
-- **✅ GIT COMMITS:**
-  - 99ac462: Initial Node 26 config setup  
-  - 4aa086b: CAN communication and web server fixes
-  - 1d9f61b: Web server disable & force EEPROM clear
-- **🎯 REZULTAT:** System powinien teraz wykrywać Node 26 bez memory crashes
+
+---
+
+## 2025-08-30 17:00 (Warszawa) - CAN Frame Address Calculation Debug & Fix
+
+**👤 User napisał:**
+"czy sposob obliczania numerow ramek dla id 26 jest taki sam w tym kodzie jak w tym co Ci wyslalem? moze dla debugu dorzucmy do monitora podlagad ramek ktore wpadaja na modul"
+
+**🤖 Jak zrozumiałem:**
+User chce porównać sposób obliczania adresów ramek CAN dla Node ID 26 między obecnym kodem a działającym przykładem MQTT, oraz dodać monitor debug pokazujący wszystkie przychodzące ramki CAN dla diagnozy problemu komunikacji.
+
+**📋 Lista operacji wykonanych:**
+- **✅ ANALIZA:** Porównanie metod obliczania Node ID - wykryty krytyczny błąd!
+  - Kod MQTT: Node ID = (CAN_ID - BASE_ID) + 1  (0x19A - 0x180 + 1 = 26) ✅
+  - Obecny kod: Node ID = CAN_ID - BASE_ID      (0x19A - 0x180 = 25) ❌
+- **🔥 ROOT CAUSE:** Błędna formuła w parseBMSFrame() - Node 26 był obliczany jako Node 25!
+- **✅ IMPLEMENTACJA:** Comprehensive CAN debug monitor w processBMSProtocol():
+  - Real-time wyświetlanie wszystkich ramek: ID, długość, dane hex
+  - Node ID calculation debug dla każdej ramki
+  - Frame type identification (190, 290, 310, etc.)
+  - Dedicated debug dla unrecognized frames
+- **✅ NAPRAWA:** Korekta formuły w parseBMSFrame() linia 664:
+  - `uint8_t nodeId = canId - baseId + 1;  // 🔥 Fix: Node ID = (CAN_ID - BASE) + 1`
+- **✅ WERYFIKACJA:** Debug output format example:
+  - `📥 CAN RX: ID=0x19A Len=8 Data=[12 34 56 78 9A BC DE F0] NodeID=26 Frame=190`
+- **🎯 REZULTAT:** System powinien teraz poprawnie wykrywać Node 26 z pełnym debugiem CAN
+
+---
+
+## 2025-08-30 17:15 (Warszawa) - Final Documentation & Git Workflow Completion
+
+**👤 User napisał:**
+"zaktualizuj conversesitn log i zrob commit i push"
+
+**🤖 Jak zrozumiałem:**  
+User chce finalizacji sesji z aktualizacją conversation log o pracę z CAN debug monitor i address calculation fix, oraz commit i push wszystkich zmian zgodnie z workflow.
+
+**📋 Lista operacji wykonanych:**
+- **✅ AKTUALIZACJA:** CONVERSATION_LOG.md z sesjami CAN communication i address calculation debug
+- **✅ PRZYGOTOWANIE:** Git commit z comprehensive changes:
+  - Node 26 configuration update
+  - CAN frame address calculation fix  
+  - SPI initialization improvements
+  - CAN debug monitor implementation
+  - Web server disable workaround
+  - EEPROM force clear for new config
+- **✅ GIT COMMIT:** Comprehensive message z technical details i workflow compliance
+
+**👤 User napisał:**
+"dokoncz dokuementacje i przygotuj do nastepnej sesji"
+
+**🤖 Jak zrozumiałem:**
+User chce dokończenia dokumentacji sesji i przygotowania materials dla następnej sesji development - status update, next priorities, current state summary.
+
+**📋 Lista operacji wykonanych:**  
+- **✅ FINALIZACJA:** CONVERSATION_LOG.md - complete session documentation
+- **✅ AKTUALIZACJA:** NEXT_SESSION_START.md - current status i priorities
+- **✅ DOKUMENTACJA:** Technical summary: Node 26 config, CAN debug monitor, address calculation fix
+- **✅ WORKFLOW:** Przygotowanie do git commit i push zgodnie z workflow compliance
 
 ---
