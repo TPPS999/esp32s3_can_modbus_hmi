@@ -53,6 +53,7 @@
 
 // === CORE INCLUDES ===
 #include <Arduino.h>
+#include <EEPROM.h>
 
 // === PROJECT MODULES (POPRAWIONE - bez can_handler) ===
 #include "config.h"
@@ -125,6 +126,13 @@ void setup() {
   Serial.println("🚀 ESP32S3 STARTING...");
   
   printStartupBanner();
+  
+  // 🔥 FORCE EEPROM CLEAR to load new Node 26 config
+  Serial.println("🧹 CLEARING EEPROM to force new configuration...");
+  EEPROM.begin(512);
+  EEPROM.write(0, 0x00); // Clear magic byte to force default config load
+  EEPROM.commit();
+  Serial.println("✅ EEPROM cleared - will load Node 26 config");
   
   // Initialize system
   initializeSystem();
@@ -309,16 +317,18 @@ bool initializeModules() {
     success = false;
   }
   
-  // 8. Initialize Web Server
+  // 8. Initialize Web Server (TYMCZASOWO WYŁĄCZONY - memory issue)
   Serial.print("🌐 Web Server... ");
-  if (configWebServer.begin()) {
-    Serial.println("✅ OK");
-    Serial.printf("   🌐 Web server running on port %d\n", WEB_SERVER_PORT);
-    Serial.println("   📋 Configuration interface available");
-  } else {
-    Serial.println("❌ FAILED");
-    success = false;
-  }
+  Serial.println("⚠️ DISABLED (memory optimization)");
+  // TODO: Re-enable after fixing memory fragmentation
+  // if (configWebServer.begin()) {
+  //   Serial.println("✅ OK");
+  //   Serial.printf("   🌐 Web server running on port %d\n", WEB_SERVER_PORT);
+  //   Serial.println("   📋 Configuration interface available");
+  // } else {
+  //   Serial.println("❌ FAILED");
+  //   success = false;
+  // }
   
   Serial.println();
   return success;
