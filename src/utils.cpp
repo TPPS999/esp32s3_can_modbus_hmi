@@ -76,9 +76,9 @@ String systemStateToString(SystemState_t state) {
 }
 
 /**
- * @brief Formatowanie bajtów (przeniesione z main.cpp + rozszerzone)
+ * @brief Formatowanie bajtów (size_t version - zgodny z utils.h)
  */
-String formatBytes(uint32_t bytes) {
+String formatBytes(size_t bytes) {
   if (bytes < 1024) {
     return String(bytes) + " B";
   } else if (bytes < 1024 * 1024) {
@@ -86,13 +86,6 @@ String formatBytes(uint32_t bytes) {
   } else {
     return String(bytes / (1024.0 * 1024.0), 1) + " MB";
   }
-}
-
-/**
- * @brief Overload dla size_t (zgodny z utils.h)
- */
-String formatBytes(size_t bytes) {
-  return formatBytes((uint32_t)bytes);
 }
 
 // getActiveBMSCount is defined in bms_data.cpp
