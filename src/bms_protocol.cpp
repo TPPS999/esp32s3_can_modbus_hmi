@@ -59,6 +59,7 @@
 #include "bms_data.h"
 #include "modbus_tcp.h"
 #include "utils.h"
+#include "trio_hp_manager.h"
 #include <esp_task_wdt.h>
 
 // === 🔥 GLOBAL VARIABLES ===
@@ -400,8 +401,8 @@ void processCANMessages() {
         DEBUG_PRINTF("] (Additional)\n");
       } else if (canId >= CAN_FRAME_710_BASE && canId < CAN_FRAME_710_BASE + 32) {
         DEBUG_PRINTF("] (CANopen)\n");
-      } else if (canId == 0x757F803) {
-        DEBUG_PRINTF("] ⚠️ Non-BMS frame: 0x%lX\n", canId);
+      } else if (trioHPIsHeartbeatFrame(canId)) {
+        DEBUG_PRINTF("] (TRIO HP Heartbeat)\n");
       } else {
         DEBUG_PRINTF("] (Type unknown)\n");
       }
@@ -697,6 +698,8 @@ void parseCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
     DEBUG_PRINTF("1B0 NodeID=%ld", canId - CAN_FRAME_1B0_BASE + 1);
   } else if (canId >= CAN_FRAME_710_BASE && canId < CAN_FRAME_710_BASE + 32) {
     DEBUG_PRINTF("710 NodeID=%ld", canId - CAN_FRAME_710_BASE + 1);
+  } else if (trioHPIsHeartbeatFrame(canId)) {
+    DEBUG_PRINTF("TRIO-HP HeartBeat");
   } else {
     DEBUG_PRINTF("UNKNOWN-ID:0x%lX", canId);
   }
@@ -705,6 +708,13 @@ void parseCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
   // 🔥 PRIORYTET 1: Sprawdź czy to ramka wyzwalacza AP (najwyższy priorytet)
   if (processAPTriggerFrame(canId, len, buf)) {
     // Ramka została przetworzona jako wyzwalacz AP
+    return;
+  }
+  
+  // 🔥 PRIORYTET 2: Sprawdź czy to ramka TRIO HP Heartbeat
+  if (trioHPIsHeartbeatFrame(canId)) {
+    DEBUG_PRINTF("TRIO-HP HeartBeat");
+    processTrioHPCanFrame(canId, buf, len);
     return;
   }
   
