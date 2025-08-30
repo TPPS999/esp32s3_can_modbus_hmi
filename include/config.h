@@ -121,7 +121,7 @@
 
 // === NETWORK CONFIGURATION ===
 const char* const WIFI_SSID = "WNK3";
-const char* const WIFI_PASSWORD = "PiotrStrzyklaskiNieIstnieje";
+const char* const WIFI_PASSWORD = "PiotrStrzykalskiNieIstnieje"; // to poprawne haslo
 #define WIFI_CONNECT_TIMEOUT_MS 30000
 #define WIFI_RECONNECT_INTERVAL_MS 60000
 

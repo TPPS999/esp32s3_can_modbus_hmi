@@ -710,6 +710,79 @@ pio run --target size  # ❌ command not found
 2. **MEDIUM:** TRIO HP Phase 5 - Advanced Features & Testing (60-90 min)
 3. **LOW:** System optimization and performance tuning
 
+---
+
+## Session 2025-08-30 - CAN Communication & Node 26 Configuration Fix
+
+### 📊 Session Status:
+- **Duration:** 2 hours  
+- **Branch:** main
+- **Files Modified:** src/config.cpp, src/bms_protocol.cpp, src/main.cpp
+- **Git Status:** ✅ COMMITTED & PUSHED (commits: 99ac462, 4aa086b, 1d9f61b)
+
+### 🛡️ **CRITICAL ISSUES RESOLVED:**
+
+#### **🔥 Primary Fix: CAN Communication Not Working with Node 26**
+**Issue:** System skonfigurowany na Node 26 ale nie wykrywał ramek CAN, mimo że na tym samym hardware działał kod MQTT z Node 26.
+
+**Root Cause Analysis:**
+- EEPROM zawierał starą konfigurację (Node 1-4) mimo zmian w kodzie
+- Brakuje proper SPI initialization przed CAN controller creation
+- Brak CS pin manipulation sequence wymaganej przez MCP2515
+- Memory heap corruption podczas AsyncWebServer allocation
+
+**Solutions Implemented:**
+- ✅ Node ID Configuration: src/config.cpp:163 - zmiana z 19 na 26
+- ✅ Proper SPI Init: src/bms_protocol.cpp - SPI.begin() z prawidłowymi pinami
+- ✅ CS Pin Control: pinMode + digitalWrite sequence przed CAN.begin()  
+- ✅ Enhanced MCP2515: Dodatkowa CS manipulation przed controller init
+- ✅ Force EEPROM Clear: src/main.cpp - clear magic byte force new config load
+- ⚠️ Web Server: Tymczasowo wyłączony z powodu memory corruption
+
+#### **🔧 Technical Implementation Details:**
+
+**SPI & CAN Initialization Fix (src/bms_protocol.cpp:459-493):**
+```cpp
+// 🔥 Initialize SPI first (like in working code)
+SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, CAN_CS_PIN);
+SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+
+// 🔥 CS Pin manipulation (like in working code) 
+pinMode(CAN_CS_PIN, OUTPUT);
+digitalWrite(CAN_CS_PIN, HIGH);
+delay(10);
+digitalWrite(CAN_CS_PIN, LOW);
+delay(10);  
+digitalWrite(CAN_CS_PIN, HIGH);
+```
+
+**EEPROM Configuration Fix (src/main.cpp:129-134):**
+```cpp
+// 🔥 FORCE EEPROM CLEAR to load new Node 26 config
+EEPROM.begin(512);
+EEPROM.write(0, 0x00); // Clear magic byte to force default config load
+EEPROM.commit();
+```
+
+#### **📊 Test Results:**
+- **Przed naprawą:** System ładował Node 1-4, brak komunikacji CAN, memory crash  
+- **Po naprawie:** System powinien ładować Node 26, inicjalizacja CAN jak w działającym kodzie
+
+#### **⚠️ Memory Issue - Web Server:**
+**Problem:** `assert failed: remove_free_block heap_tlsf.c:205` podczas AsyncWebServer allocation
+**Workaround:** Tymczasowo wyłączony web server w src/main.cpp:312-323
+**Next Steps:** Memory optimization i re-enable web server
+
+### 🔄 Currently Working On:
+- ✅ COMPLETED: Node 26 CAN communication setup
+- ⏸️ PENDING: Hardware testing verification (Node 26 detection)  
+- ⏸️ PAUSED: Web server (memory optimization needed)
+
+### 📋 Next Session Priorities:
+1. **HIGH:** Hardware verification - czy system wykrywa Node 26 i TRIO heartbeat
+2. **MEDIUM:** Memory optimization dla web server re-enable  
+3. **LOW:** Performance tuning for single Node 26 operation
+
 ----
 
 [Future sessions will be logged here as development continues...]

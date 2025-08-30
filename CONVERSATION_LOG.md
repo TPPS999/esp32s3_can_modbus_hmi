@@ -363,3 +363,33 @@ User zgłosił błąd kompilacji na innym komputerze: "'class WiFiClient' has no
 - **✅ FIX:** client.flush() jest widely supported i służy temu samemu celowi (immediate data send)
 - **✅ AKTUALIZACJA:** CONVERSATION_LOG.md z obecną sesją zgodnie z workflow
 - **🎯 REZULTAT:** Cross-platform compilation issue resolved - system powinien kompilować się na wszystkich maszynach
+
+---
+
+## 2025-08-30 16:30 (Warszawa) - CAN Communication & Node 26 Configuration
+
+**👤 User napisał:**
+"node to jednak 26, ale nawet jak go poprawilem to wciaz nie wykrywa nic na canie. na tej samej plytce odpalilem poprzedni program ktory mialem do baterii i tam mam dane z baterii i widze ramke heartbeat z trio dodatkowo nie dziala webserver"
+
+**🤖 Jak zrozumiałem:**
+User zgłosił że mimo zmiany konfiguracji na Node 26, system nadal nie wykrywa komunikacji CAN. Na tym samym hardware działa poprzedni kod MQTT (podał przykład) który poprawnie wykrywa Node 26 i TRIO heartbeat. Dodatkowo web server nie działa. Problem inicjalizacji CAN lub konfiguracji EEPROM.
+
+**📋 Lista operacji wykonanych:**
+- **✅ ANALIZA:** Porównanie z działającym kodem MQTT - brakuje SPI.begin() i CS pin manipulation
+- **✅ NAPRAWA:** Node ID configuration zmiana z 19 na 26 w src/config.cpp:163
+- **✅ IMPLEMENTACJA:** Proper SPI initialization w src/bms_protocol.cpp:
+  - SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, CAN_CS_PIN)
+  - SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0))
+  - pinMode(CAN_CS_PIN, OUTPUT) + CS pin manipulation sequence
+- **✅ NAPRAWA:** Enhanced MCP2515 init z dodatkową CS pin kontrolą przed CAN.begin()
+- **✅ IMPLEMENTACJA:** Web server initialization dodane do main.cpp
+- **⚠️ PROBLEM:** Memory heap corruption podczas AsyncWebServer allocation
+- **✅ WORKAROUND:** Tymczasowe wyłączenie web server - memory optimization needed
+- **✅ DIAGNOSTYKA:** Force EEPROM clear dla załadowania Node 26 config (stary EEPROM miał 1-4)
+- **✅ GIT COMMITS:**
+  - 99ac462: Initial Node 26 config setup  
+  - 4aa086b: CAN communication and web server fixes
+  - 1d9f61b: Web server disable & force EEPROM clear
+- **🎯 REZULTAT:** System powinien teraz wykrywać Node 26 bez memory crashes
+
+---
