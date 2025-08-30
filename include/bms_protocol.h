@@ -102,7 +102,8 @@ void shutdownCAN();
 bool isCANInitialized();
 
 // CAN processing
-void processCAN();                 // Odbiór i przetwarzanie ramek CAN
+void processCANMessages();         // Rzeczywiste przetwarzanie ramek CAN
+void processCAN();                 // Legacy wrapper - calls processBMSProtocol()
 bool isCANHealthy();              // Status CAN communication
 
 // === 🔥 FRAME PROCESSING ===
@@ -336,7 +337,7 @@ void resetBMSProtocolConfigToDefaults();
 
 // Aliasy dla zachowania kompatybilności z poprzednimi wersjami
 #define setupCAN() setupBMSProtocol()
-#define processCAN() processBMSProtocol()
+// Note: processCAN() is now implemented as a proper function to avoid recursion
 #define isCANHealthy() isBMSProtocolHealthy()
 
 // Legacy function wrappers

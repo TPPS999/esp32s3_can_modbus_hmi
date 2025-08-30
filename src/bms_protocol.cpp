@@ -59,6 +59,7 @@
 #include "bms_data.h"
 #include "modbus_tcp.h"
 #include "utils.h"
+#include <esp_task_wdt.h>
 
 // === 🔥 GLOBAL VARIABLES ===
 static bool protocolLoggingEnabled = true;
@@ -66,6 +67,22 @@ static bool canInitialized = false;
 static bool protocolHealthy = false;
 static unsigned long lastCANActivity = 0;
 static unsigned long protocolStartTime = 0;
+
+// === 🔥 STACK PROTECTION VARIABLES ===
+static uint32_t maxStackUsage = 0;
+static uint32_t stackOverflowCount = 0;
+static uint32_t recursionDepth = 0;
+static const uint32_t MAX_RECURSION_DEPTH = 10;
+static const uint32_t STACK_WARNING_THRESHOLD = 2048; // 2KB warning
+static unsigned long lastStackCheck = 0;
+
+// === 🔥 ERROR RECOVERY VARIABLES ===
+static uint32_t errorRecoveryCount = 0;
+static uint32_t systemRestartCount = 0;
+static unsigned long lastWatchdogReset = 0;
+static unsigned long lastErrorRecovery = 0;
+static const uint32_t WATCHDOG_INTERVAL = 30000; // 30 seconds
+static const uint32_t ERROR_RECOVERY_COOLDOWN = 60000; // 1 minute
 
 // 🔥 CAN controller instance (zgodny z config.h)
 MCP_CAN* canController = nullptr;
@@ -83,6 +100,156 @@ static BMSProtocolConfig_t protocolConfig = {
   .frameTimeoutMs = 30000,
   .maxProcessingTimeMs = 10
 };
+
+// === 🔥 STACK PROTECTION FUNCTIONS ===
+
+/**
+ * @brief Check current stack usage and warn if approaching limits
+ */
+void checkStackUsage() {
+  // Get current free stack space  
+  uint32_t freeStack = uxTaskGetStackHighWaterMark(NULL);
+  uint32_t usedStack = 8192 - freeStack; // Assuming 8KB stack
+  
+  if (usedStack > maxStackUsage) {
+    maxStackUsage = usedStack;
+  }
+  
+  if (freeStack < STACK_WARNING_THRESHOLD) {
+    stackOverflowCount++;
+    DEBUG_PRINTF("⚠️ Stack warning: Only %lu bytes free (used: %lu bytes)\n", 
+                 freeStack, usedStack);
+  }
+}
+
+/**
+ * @brief Check recursion depth to prevent infinite recursion
+ */
+bool checkRecursionDepth(const char* functionName) {
+  recursionDepth++;
+  
+  if (recursionDepth > MAX_RECURSION_DEPTH) {
+    DEBUG_PRINTF("❌ Recursion depth exceeded in %s: %lu\n", 
+                 functionName, recursionDepth);
+    recursionDepth--; // Restore depth before returning
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * @brief Exit recursion tracking
+ */
+void exitRecursionTracking() {
+  if (recursionDepth > 0) {
+    recursionDepth--;
+  }
+}
+
+/**
+ * @brief Get stack protection statistics
+ */
+void printStackStats() {
+  uint32_t freeStack = uxTaskGetStackHighWaterMark(NULL);
+  DEBUG_PRINTF("📊 Stack Stats: Max used=%lu, Current free=%lu, Warnings=%lu\n",
+               maxStackUsage, freeStack, stackOverflowCount);
+}
+
+// === 🔥 ERROR RECOVERY FUNCTIONS ===
+
+/**
+ * @brief Reset watchdog to prevent system restart
+ */
+void resetSystemWatchdog() {
+  unsigned long now = millis();
+  if (now - lastWatchdogReset > WATCHDOG_INTERVAL) {
+    // Feed the watchdog (ESP32 auto-reset prevention)
+    esp_task_wdt_reset();
+    lastWatchdogReset = now;
+    
+    if (protocolConfig.enableDebugLogging) {
+      DEBUG_PRINTF("🐕 Watchdog reset - system healthy\n");
+    }
+  }
+}
+
+/**
+ * @brief Attempt system error recovery
+ */
+bool attemptErrorRecovery() {
+  unsigned long now = millis();
+  
+  // Don't attempt recovery too frequently
+  if (now - lastErrorRecovery < ERROR_RECOVERY_COOLDOWN) {
+    return false;
+  }
+  
+  lastErrorRecovery = now;
+  errorRecoveryCount++;
+  
+  DEBUG_PRINTF("🔧 Attempting error recovery (attempt #%lu)\n", errorRecoveryCount);
+  
+  // Recovery steps
+  bool recovered = false;
+  
+  // Step 1: Reset CAN controller
+  if (!canInitialized) {
+    DEBUG_PRINTF("   Step 1: Reinitializing CAN controller\n");
+    if (initializeCAN()) {
+      DEBUG_PRINTF("   ✅ CAN controller recovered\n");
+      recovered = true;
+    } else {
+      DEBUG_PRINTF("   ❌ CAN controller recovery failed\n");
+    }
+  }
+  
+  // Step 2: Reset protocol statistics
+  DEBUG_PRINTF("   Step 2: Resetting protocol statistics\n");
+  resetBMSProtocolStats();
+  
+  // Step 3: Clear error counters
+  DEBUG_PRINTF("   Step 3: Clearing error counters\n");
+  stackOverflowCount = 0;
+  recursionDepth = 0;
+  
+  if (recovered) {
+    DEBUG_PRINTF("✅ System recovery successful\n");
+  } else {
+    DEBUG_PRINTF("⚠️ System recovery partially successful\n");
+  }
+  
+  return recovered;
+}
+
+/**
+ * @brief Emergency system restart if recovery fails
+ */
+void emergencySystemRestart() {
+  systemRestartCount++;
+  
+  DEBUG_PRINTF("🚨 EMERGENCY RESTART #%lu - System recovery failed\n", systemRestartCount);
+  DEBUG_PRINTF("   Stack overflows: %lu\n", stackOverflowCount);
+  DEBUG_PRINTF("   Recovery attempts: %lu\n", errorRecoveryCount);
+  DEBUG_PRINTF("   Max stack usage: %lu bytes\n", maxStackUsage);
+  
+  // Give time for debug output
+  delay(2000);
+  
+  // Restart the ESP32
+  ESP.restart();
+}
+
+/**
+ * @brief Get error recovery statistics  
+ */
+void printErrorRecoveryStats() {
+  DEBUG_PRINTF("📊 Error Recovery Stats:\n");
+  DEBUG_PRINTF("   Recovery attempts: %lu\n", errorRecoveryCount);
+  DEBUG_PRINTF("   System restarts: %lu\n", systemRestartCount);
+  DEBUG_PRINTF("   Last recovery: %lu ms ago\n", 
+               millis() - lastErrorRecovery);
+}
 
 // === 🔥 GŁÓWNE FUNKCJE PROTOKOŁU (wymagane przez main.cpp) ===
 
@@ -159,6 +326,56 @@ bool restartBMSProtocol() {
 }
 
 /**
+ * @brief Przetwarza wiadomości CAN (rzeczywista implementacja)
+ */
+void processCANMessages() {
+  if (!canController || !canInitialized) {
+    return;
+  }
+  
+  // Stack protection - check recursion depth
+  if (!checkRecursionDepth("processCANMessages")) {
+    return;
+  }
+  
+  // Check stack usage periodically and reset watchdog
+  unsigned long now = millis();
+  if (now - lastStackCheck > 5000) { // Check every 5 seconds
+    checkStackUsage();
+    resetSystemWatchdog(); // Reset watchdog to prevent system restart
+    lastStackCheck = now;
+  }
+  
+  unsigned long canId;
+  unsigned char len = 0;
+  unsigned char buf[8];
+  
+  // Check for available messages and process them
+  while (canController->checkReceive() == CAN_MSGAVAIL) {
+    if (canController->readMsgBuf(&len, buf) == CAN_OK) {
+      canId = canController->getCanId();
+      
+      protocolStats.totalFramesReceived++;
+      lastCANActivity = millis();
+      
+      // Validate frame
+      if (validateFrameData(canId, len, buf)) {
+        // Process the frame
+        parseCANFrame(canId, len, buf);
+        protocolStats.validBMSFrameCount++;
+      } else {
+        protocolStats.invalidFrameCount++;
+      }
+    } else {
+      protocolStats.readErrorCount++;
+    }
+  }
+  
+  // Exit recursion tracking
+  exitRecursionTracking();
+}
+
+/**
  * @brief Główna pętla przetwarzania protokołu BMS (zastępuje processCAN)
  */
 void processBMSProtocol() {
@@ -166,10 +383,15 @@ void processBMSProtocol() {
     return;
   }
   
+  // Stack protection - check recursion depth  
+  if (!checkRecursionDepth("processBMSProtocol")) {
+    return;
+  }
+  
   unsigned long startTime = millis();
   
-  // Process CAN messages
-  processCAN();
+  // Process CAN messages directly (avoid recursive call)
+  processCANMessages();
   
   // Check communication timeouts
   if (protocolConfig.enableTimeoutDetection) {
@@ -190,6 +412,9 @@ void processBMSProtocol() {
       DEBUG_PRINTF("⚠️ Slow BMS processing: %lu ms\n", processingTime);
     }
   }
+  
+  // Exit recursion tracking
+  exitRecursionTracking();
 }
 
 /**
@@ -303,7 +528,13 @@ bool isCANInitialized() {
   return canInitialized && canController != nullptr;
 }
 
-// processCAN() is aliased to processBMSProtocol() via macro in header
+/**
+ * @brief Legacy processCAN wrapper - directly calls processCANMessages to avoid recursion
+ */
+void processCAN() {
+  // Legacy wrapper - only processes CAN messages without full protocol overhead
+  processCANMessages();
+}
 
 // isCANHealthy() is aliased to isBMSProtocolHealthy() via macro in header
 
