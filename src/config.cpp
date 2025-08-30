@@ -158,14 +158,14 @@ void setDefaultConfiguration() {
   strcpy(systemConfig.wifiSSID, WIFI_SSID);
   strcpy(systemConfig.wifiPassword, WIFI_PASSWORD);
   
-  // Domyślna konfiguracja BMS
-  systemConfig.activeBmsNodes = 4; // Default to 4 BMS modules
-  for (int i = 0; i < systemConfig.activeBmsNodes; i++) {
-    systemConfig.bmsNodeIds[i] = i + 1;  // Node IDs 1-4
-  }
+  // 🔥 TESTOWA KONFIGURACJA BMS - POJEDYNCZA BATERIA
+  systemConfig.activeBmsNodes = 1;        // Tylko 1 bateria
+  systemConfig.bmsNodeIds[0] = 19;        // Node ID = 19
   
-  // Domyślna konfiguracja CAN i Modbus
-  systemConfig.canSpeed = CAN_500KBPS;  // Changed default to 500 kbps
+  // 🔥 CAN 125 kbps dla stabilności  
+  systemConfig.canSpeed = CAN_125KBPS;    // 125 kbps
+  
+  // Domyślna konfiguracja Modbus
   systemConfig.modbusPort = MODBUS_TCP_PORT;
   systemConfig.modbusSlaveId = MODBUS_SLAVE_ID;
   systemConfig.enableCanFiltering = true;
