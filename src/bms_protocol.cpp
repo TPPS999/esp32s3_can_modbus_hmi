@@ -330,6 +330,11 @@ bool restartBMSProtocol() {
  */
 void processCANMessages() {
   if (!canController || !canInitialized) {
+    static unsigned long lastErrorMsg = 0;
+    if (millis() - lastErrorMsg > 10000) { // Warn every 10 seconds
+      DEBUG_PRINTF("⚠️ CAN not available: controller=%p initialized=%d\n", canController, canInitialized);
+      lastErrorMsg = millis();
+    }
     return;
   }
   
@@ -344,16 +349,62 @@ void processCANMessages() {
     checkStackUsage();
     resetSystemWatchdog(); // Reset watchdog to prevent system restart
     lastStackCheck = now;
+    
+    // 🔥 HARDWARE DEBUG: Periodic CAN status check
+    DEBUG_PRINTF("🔍 CAN Status Check: controller=%p initialized=%d\n", canController, canInitialized);
+    DEBUG_PRINTF("   Total frames: %lu, Valid: %lu, Errors: %lu\n", 
+                 protocolStats.totalFramesReceived, protocolStats.validBMSFrameCount, 
+                 protocolStats.readErrorCount);
   }
   
   unsigned long canId;
   unsigned char len = 0;
   unsigned char buf[8];
   
+  // 🔥 HARDWARE DEBUG: Check for available messages
+  uint8_t checkResult = canController->checkReceive();
+  
+  static unsigned long lastDebugCheck = 0;
+  if (millis() - lastDebugCheck > 2000) { // Debug every 2 seconds
+    DEBUG_PRINTF("🔍 CAN checkReceive() result: %d (CAN_MSGAVAIL=%d)\n", checkResult, CAN_MSGAVAIL);
+    lastDebugCheck = millis();
+  }
+  
   // Check for available messages and process them
-  while (canController->checkReceive() == CAN_MSGAVAIL) {
-    if (canController->readMsgBuf(&len, buf) == CAN_OK) {
+  while (checkResult == CAN_MSGAVAIL) {
+    DEBUG_PRINTF("🔍 CAN message available, attempting to read...\n");
+    
+    uint8_t readResult = canController->readMsgBuf(&len, buf);
+    DEBUG_PRINTF("🔍 readMsgBuf() result: %d (CAN_OK=%d)\n", readResult, CAN_OK);
+    
+    if (readResult == CAN_OK) {
       canId = canController->getCanId();
+      
+      // 🔥 DETAILED FRAME DEBUG (like in working code)
+      DEBUG_PRINTF("🔍 CAN: ID=0x%lX Len=%d Data=[", canId, len);
+      for (int i = 0; i < len; i++) {
+        DEBUG_PRINTF("%02X", buf[i]);
+        if (i < len - 1) DEBUG_PRINTF(" ");
+      }
+      
+      // 🔥 FIXED: Add frame type analysis like in working code (using ranges)
+      if (len != 8) {
+        DEBUG_PRINTF("] ⚠️ Invalid frame length: %d (expected 8)\n", len);
+      } else if (canId >= CAN_FRAME_190_BASE && canId < CAN_FRAME_190_BASE + 32) {
+        DEBUG_PRINTF("] (Basic data)\n");
+      } else if (canId >= CAN_FRAME_290_BASE && canId < CAN_FRAME_290_BASE + 32) {
+        DEBUG_PRINTF("] (Cell voltages)\n");
+      } else if (canId >= CAN_FRAME_310_BASE && canId < CAN_FRAME_310_BASE + 32) {
+        DEBUG_PRINTF("] (Multiplexed)\n");
+      } else if (canId >= CAN_FRAME_1B0_BASE && canId < CAN_FRAME_1B0_BASE + 32) {
+        DEBUG_PRINTF("] (Additional)\n");
+      } else if (canId >= CAN_FRAME_710_BASE && canId < CAN_FRAME_710_BASE + 32) {
+        DEBUG_PRINTF("] (CANopen)\n");
+      } else if (canId == 0x757F803) {
+        DEBUG_PRINTF("] ⚠️ Non-BMS frame: 0x%lX\n", canId);
+      } else {
+        DEBUG_PRINTF("] (Type unknown)\n");
+      }
       
       protocolStats.totalFramesReceived++;
       lastCANActivity = millis();
@@ -365,10 +416,15 @@ void processCANMessages() {
         protocolStats.validBMSFrameCount++;
       } else {
         protocolStats.invalidFrameCount++;
+        DEBUG_PRINTF("⚠️ Frame validation failed for ID=0x%lX len=%d\n", canId, len);
       }
     } else {
       protocolStats.readErrorCount++;
+      DEBUG_PRINTF("❌ CAN readMsgBuf failed with result: %d\n", readResult);
     }
+    
+    // Check for next message
+    checkResult = canController->checkReceive();
   }
   
   // Exit recursion tracking
@@ -515,25 +571,44 @@ bool initializeCAN() {
  */
 bool initializeMCP2515() {
   if (!canController) {
+    DEBUG_PRINTF("❌ canController is NULL!\n");
     return false;
   }
   
   DEBUG_PRINTF("🔄 Initializing CAN at 125 kbps (fixed)...\n");
   
   // 🔥 Additional CS pin manipulation before begin (like in working code)
+  DEBUG_PRINTF("🔍 CS pin manipulation: LOW->HIGH\n");
   digitalWrite(CAN_CS_PIN, LOW);
   delay(10);
   digitalWrite(CAN_CS_PIN, HIGH);
   delay(100);
   
+  // 🔥 HARDWARE DEBUG: Test SPI communication before CAN init
+  DEBUG_PRINTF("🔍 Testing SPI communication with MCP2515...\n");
+  
   // Initialize MCP2515 with 125kbps (compatible with BMS)
-  if (canController->begin(CAN_125KBPS) != CAN_OK) {
-    DEBUG_PRINTF("❌ MCP2515 initialization failed at 125 kbps!\n");
+  DEBUG_PRINTF("🔍 Calling canController->begin(CAN_125KBPS)...\n");
+  uint8_t initResult = canController->begin(CAN_125KBPS);
+  DEBUG_PRINTF("🔍 canController->begin() returned: %d (CAN_OK=%d)\n", initResult, CAN_OK);
+  
+  if (initResult != CAN_OK) {
+    DEBUG_PRINTF("❌ MCP2515 initialization failed at 125 kbps! Result: %d\n", initResult);
+    DEBUG_PRINTF("   Possible causes:\n");
+    DEBUG_PRINTF("   - SPI wiring issue\n");
+    DEBUG_PRINTF("   - CS pin incorrect (%d)\n", CAN_CS_PIN);
+    DEBUG_PRINTF("   - MCP2515 not powered\n");
+    DEBUG_PRINTF("   - Crystal oscillator issue\n");
     return false;
   }
   
   DEBUG_PRINTF("✅ CAN initialized at 125 kbps (fixed)\n");
   DEBUG_PRINTF("📋 CAN controller ready at 125 kbps\n");
+  
+  // 🔥 HARDWARE DEBUG: Test if controller responds
+  DEBUG_PRINTF("🔍 Testing CAN controller responsiveness...\n");
+  uint8_t testCheckResult = canController->checkReceive();
+  DEBUG_PRINTF("   checkReceive() test result: %d\n", testCheckResult);
   
   // Print monitoring info like in working code
   DEBUG_PRINTF("🎯 Monitoring BMS Node IDs: ");
@@ -541,6 +616,15 @@ bool initializeMCP2515() {
     DEBUG_PRINTF("%d(0x%X) ", systemConfig.bmsNodeIds[i], systemConfig.bmsNodeIds[i]);
   }
   DEBUG_PRINTF("\n");
+  
+  // 🔥 CALCULATE EXPECTED CAN IDs for Node 26 debug
+  if (systemConfig.activeBmsNodes > 0) {
+    uint8_t nodeId = systemConfig.bmsNodeIds[0]; // Usually Node 26
+    DEBUG_PRINTF("🔍 Expected CAN IDs for Node %d:\n", nodeId);
+    DEBUG_PRINTF("   Frame 190: 0x%X (base 0x%X)\n", CAN_FRAME_190_BASE + nodeId - 1, CAN_FRAME_190_BASE);
+    DEBUG_PRINTF("   Frame 290: 0x%X (base 0x%X)\n", CAN_FRAME_290_BASE + nodeId - 1, CAN_FRAME_290_BASE);
+    DEBUG_PRINTF("   Frame 710: 0x%X (base 0x%X)\n", CAN_FRAME_710_BASE + nodeId - 1, CAN_FRAME_710_BASE);
+  }
   
   return true;
 }
@@ -594,15 +678,27 @@ void parseCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
   }
   DEBUG_PRINTF("] Type=");
   
-  // Show expected Node ID for each frame type
-  if ((canId & 0xFF80) == CAN_FRAME_190_BASE) {
-    DEBUG_PRINTF("190 NodeID=%d", canId - CAN_FRAME_190_BASE + 1);
-  } else if ((canId & 0xFF80) == CAN_FRAME_290_BASE) {
-    DEBUG_PRINTF("290 NodeID=%d", canId - CAN_FRAME_290_BASE + 1);
-  } else if ((canId & 0xFF80) == CAN_FRAME_710_BASE) {
-    DEBUG_PRINTF("710 NodeID=%d", canId - CAN_FRAME_710_BASE + 1);
+  // 🔥 FIXED: Show expected Node ID for each frame type (using ranges, not mask)
+  if (canId >= CAN_FRAME_190_BASE && canId < CAN_FRAME_190_BASE + 32) {
+    DEBUG_PRINTF("190 NodeID=%ld", canId - CAN_FRAME_190_BASE + 1);
+  } else if (canId >= CAN_FRAME_290_BASE && canId < CAN_FRAME_290_BASE + 32) {
+    DEBUG_PRINTF("290 NodeID=%ld", canId - CAN_FRAME_290_BASE + 1);
+  } else if (canId >= CAN_FRAME_310_BASE && canId < CAN_FRAME_310_BASE + 32) {
+    DEBUG_PRINTF("310 NodeID=%ld", canId - CAN_FRAME_310_BASE + 1);
+  } else if (canId >= CAN_FRAME_390_BASE && canId < CAN_FRAME_390_BASE + 32) {
+    DEBUG_PRINTF("390 NodeID=%ld", canId - CAN_FRAME_390_BASE + 1);
+  } else if (canId >= CAN_FRAME_410_BASE && canId < CAN_FRAME_410_BASE + 32) {
+    DEBUG_PRINTF("410 NodeID=%ld", canId - CAN_FRAME_410_BASE + 1);
+  } else if (canId >= CAN_FRAME_510_BASE && canId < CAN_FRAME_510_BASE + 32) {
+    DEBUG_PRINTF("510 NodeID=%ld", canId - CAN_FRAME_510_BASE + 1);
+  } else if (canId >= CAN_FRAME_490_BASE && canId < CAN_FRAME_490_BASE + 32) {
+    DEBUG_PRINTF("490 NodeID=%ld", canId - CAN_FRAME_490_BASE + 1);
+  } else if (canId >= CAN_FRAME_1B0_BASE && canId < CAN_FRAME_1B0_BASE + 32) {
+    DEBUG_PRINTF("1B0 NodeID=%ld", canId - CAN_FRAME_1B0_BASE + 1);
+  } else if (canId >= CAN_FRAME_710_BASE && canId < CAN_FRAME_710_BASE + 32) {
+    DEBUG_PRINTF("710 NodeID=%ld", canId - CAN_FRAME_710_BASE + 1);
   } else {
-    DEBUG_PRINTF("UNKNOWN");
+    DEBUG_PRINTF("UNKNOWN-ID:0x%lX", canId);
   }
   DEBUG_PRINTF("\n");
 
@@ -618,32 +714,32 @@ void parseCANFrame(unsigned long canId, unsigned char len, unsigned char* buf) {
     return;
   }
   
-  // Route to appropriate parser based on CAN ID
-  if ((canId & 0xFF80) == CAN_FRAME_190_BASE) {
+  // 🔥 FIXED: Route to appropriate parser based on CAN ID RANGES (not mask!)
+  if (canId >= CAN_FRAME_190_BASE && canId < CAN_FRAME_190_BASE + 32) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_190_BASE);
     if (nodeId > 0) parseBMSFrame190(nodeId, buf);
-  } else if ((canId & 0xFF80) == CAN_FRAME_290_BASE) {
+  } else if (canId >= CAN_FRAME_290_BASE && canId < CAN_FRAME_290_BASE + 32) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_290_BASE);
     if (nodeId > 0) parseBMSFrame290(nodeId, buf);
-  } else if ((canId & 0xFF80) == CAN_FRAME_310_BASE) {
+  } else if (canId >= CAN_FRAME_310_BASE && canId < CAN_FRAME_310_BASE + 32) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_310_BASE);
     if (nodeId > 0) parseBMSFrame310(nodeId, buf);
-  } else if ((canId & 0xFF80) == CAN_FRAME_390_BASE) {
+  } else if (canId >= CAN_FRAME_390_BASE && canId < CAN_FRAME_390_BASE + 32) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_390_BASE);
     if (nodeId > 0) parseBMSFrame390(nodeId, buf);
-  } else if ((canId & 0xFF80) == CAN_FRAME_410_BASE) {
+  } else if (canId >= CAN_FRAME_410_BASE && canId < CAN_FRAME_410_BASE + 32) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_410_BASE);
     if (nodeId > 0) parseBMSFrame410(nodeId, buf);
-  } else if ((canId & 0xFF80) == CAN_FRAME_510_BASE) {
+  } else if (canId >= CAN_FRAME_510_BASE && canId < CAN_FRAME_510_BASE + 32) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_510_BASE);
     if (nodeId > 0) parseBMSFrame510(nodeId, buf);
-  } else if ((canId & 0xFF80) == CAN_FRAME_490_BASE) {
+  } else if (canId >= CAN_FRAME_490_BASE && canId < CAN_FRAME_490_BASE + 32) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_490_BASE);
     if (nodeId > 0) parseBMSFrame490(nodeId, buf);
-  } else if ((canId & 0xFF80) == CAN_FRAME_1B0_BASE) {
+  } else if (canId >= CAN_FRAME_1B0_BASE && canId < CAN_FRAME_1B0_BASE + 32) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_1B0_BASE);
     if (nodeId > 0) parseBMSFrame1B0(nodeId, buf);
-  } else if ((canId & 0xFF80) == CAN_FRAME_710_BASE) {
+  } else if (canId >= CAN_FRAME_710_BASE && canId < CAN_FRAME_710_BASE + 32) {
     uint8_t nodeId = extractNodeId(canId, CAN_FRAME_710_BASE);
     if (nodeId > 0) parseBMSFrame710(nodeId, buf);
   } else {
@@ -759,17 +855,18 @@ unsigned long getLastFrameTime(uint8_t nodeId) {
 
 /**
  * @brief Sprawdź czy ramka CAN to poprawna ramka BMS
+ * 🔥 FIXED: Using ranges instead of broken mask
  */
 bool isValidBMSFrame(unsigned long canId) {
-  return ((canId & 0xFF80) == CAN_FRAME_190_BASE) ||  // Frame 190
-         ((canId & 0xFF80) == CAN_FRAME_290_BASE) ||  // Frame 290
-         ((canId & 0xFF80) == CAN_FRAME_310_BASE) ||  // Frame 310
-         ((canId & 0xFF80) == CAN_FRAME_390_BASE) ||  // Frame 390
-         ((canId & 0xFF80) == CAN_FRAME_410_BASE) ||  // Frame 410
-         ((canId & 0xFF80) == CAN_FRAME_510_BASE) ||  // Frame 510
-         ((canId & 0xFF80) == CAN_FRAME_490_BASE) ||  // Frame 490
-         ((canId & 0xFF80) == CAN_FRAME_1B0_BASE) ||  // Frame 1B0
-         ((canId & 0xFF80) == CAN_FRAME_710_BASE);    // Frame 710
+  return (canId >= CAN_FRAME_190_BASE && canId < CAN_FRAME_190_BASE + 32) ||  // Frame 190
+         (canId >= CAN_FRAME_290_BASE && canId < CAN_FRAME_290_BASE + 32) ||  // Frame 290
+         (canId >= CAN_FRAME_310_BASE && canId < CAN_FRAME_310_BASE + 32) ||  // Frame 310
+         (canId >= CAN_FRAME_390_BASE && canId < CAN_FRAME_390_BASE + 32) ||  // Frame 390
+         (canId >= CAN_FRAME_410_BASE && canId < CAN_FRAME_410_BASE + 32) ||  // Frame 410
+         (canId >= CAN_FRAME_510_BASE && canId < CAN_FRAME_510_BASE + 32) ||  // Frame 510
+         (canId >= CAN_FRAME_490_BASE && canId < CAN_FRAME_490_BASE + 32) ||  // Frame 490
+         (canId >= CAN_FRAME_1B0_BASE && canId < CAN_FRAME_1B0_BASE + 32) ||  // Frame 1B0
+         (canId >= CAN_FRAME_710_BASE && canId < CAN_FRAME_710_BASE + 32);    // Frame 710
 }
 
 /**
